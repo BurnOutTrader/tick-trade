@@ -14,8 +14,8 @@ impl RithmicApiClient {
             Resolution::Minutes(q) => (crate::client::rithmic_proto_objects::rti::request_time_bar_update::BarType::SecondBar,Some(q as i32)),
             Resolution::Hours(q) => (crate::client::rithmic_proto_objects::rti::request_time_bar_update::BarType::SecondBar,Some(q as i32)),
             Resolution::TickBars(_) => return Err(RithmicApiError::MappingError("TickBars not supported for TimeBarUpdate".to_string())),
-          Resolution::Daily => (crate::client::rithmic_proto_objects::rti::request_time_bar_update::BarType::DailyBar,None),
-          Resolution::Weekly => (crate::client::rithmic_proto_objects::rti::request_time_bar_update::BarType::WeeklyBar,None),
+            Resolution::Daily => (crate::client::rithmic_proto_objects::rti::request_time_bar_update::BarType::DailyBar,None),
+            Resolution::Weekly => (crate::client::rithmic_proto_objects::rti::request_time_bar_update::BarType::WeeklyBar,None),
             _ => return Err(RithmicApiError::MappingError("Unacceptable resolution for time bar update".to_string())),
         };
         const TID: i32 = 200;
