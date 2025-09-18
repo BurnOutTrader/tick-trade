@@ -119,7 +119,6 @@ The **StrategyEngine** is the façade object that strategies interact with.
 It wraps an [`EngineCtx`] but is **scoped to a specific mode** (`Live` or `Backtest`).  
 
 This ensures all subscriptions, time queries, and feed helpers automatically use the correct clock and router without the strategy needing to care.
----
 
 ## Rithmic Integration (`apis/rithmic`)
 - **RithmicApiClient**
