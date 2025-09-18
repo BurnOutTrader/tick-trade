@@ -3,15 +3,12 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use tokio::sync::{broadcast, mpsc, RwLock};
 use std::sync::Arc;
-
 use standard_lib::engine_core::strategy_engine::StrategyEngine;
 use standard_lib::engine_core::strategy_manager::Strategy;
 use standard_lib::engine_core::public_classes::StrategyEvent;
 use standard_lib::engine_core::data_events::{FeedKind, StrategyMode};
-
 use standard_lib::market_data::base_data::{Bbo, Candle, OrderBook, Resolution, Tick};
 use standard_lib::market_data::market_by_order::{BookInterest, BookTrigger, MboActionMask, L3Book};
-
 use standard_lib::securities::symbols::{Exchange, SymbolId};
 use standard_lib::universes::models::UniversePlan;
 use standard_lib::universes::inbuilt::r#static::plan_one_symbol;
@@ -20,7 +17,6 @@ use standard_lib::universes::inbuilt::r#static::plan_one_symbol;
 pub struct L3ExampleStrategy {
     tasks: DashMap<String, tokio::task::JoinHandle<()>>,
 }
-
 
 #[async_trait]
 impl Strategy for L3ExampleStrategy {
