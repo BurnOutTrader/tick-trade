@@ -3,11 +3,27 @@
 A Rust workspace for building a low-latency trading engine with unified market data routing, vendor integrations (Rithmic), and reusable strategy components.  
 The architecture is designed so that the **same strategy code** runs in both **live** and **backtest** modes with minimal branching.
 
+Planned vendor support:
+- Rithmic
+- ProjectX
+- Databento
+
+Planned broker support:
+- ProjectX Prop firms
+- Rithmic Brokers or prop firms
+
+Future Proof
+- dynamic `MarketDataProvider` traits that can be implemented by any vendor.
+- dynamic `HistoricalDataProvider` traits that can be implemented by any vendor.
+- dynamic UniverseSelection to allow development of more complex strategies in the future.
 ---
 
 # Next Steps
 - Make history serialization database
+- Make live order handling for ProjectX and Rithmic
+- Make data vendor impl for projectX and databento
 - Make Historical data feed
+- Make backtesting engine
 
 ## Stack
 - **Language:** Rust (workspace, edition 2024)
