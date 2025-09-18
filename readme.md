@@ -11,6 +11,7 @@ Planned vendor support:
 Planned broker support:
 - ProjectX Prop firms
 - Rithmic Brokers or prop firms
+- Designed to allow future integrations of any market type.
 
 Future Proof
 - dynamic `MarketDataProvider` traits that can be implemented by any vendor.
@@ -18,8 +19,17 @@ Future Proof
 - dynamic UniverseSelection to allow development of more complex strategies in the future.
 ---
 
+
+# Design
+- Strategies run as libraries from launched into the strategy manager from main.
+- multiple strategies can run simultaneously.  
+- future hot loading
+- backtest strategies get a unique engine context and market data 
+- live strategies share the same engine context and market data
+- 
+
 # Next Steps
-- Make history serialization database
+- Make history serialization database using DuckDb
 - Make live order handling for ProjectX and Rithmic
 - Make data vendor impl for projectX and databento
 - Make Historical data feed
