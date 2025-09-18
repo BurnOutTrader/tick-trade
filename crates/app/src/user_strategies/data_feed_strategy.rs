@@ -16,95 +16,6 @@ pub struct DataSubscriptionExampleStrategy {
     tasks: DashMap<String, tokio::task::JoinHandle<()>>,
 }
 
-impl DataSubscriptionExampleStrategy {
-    pub fn new() -> Self {
-        Self {
-            tasks: DashMap::new(),
-        }
-    }
-
-    fn spawn_symbol_task(
-        &self,
-        _context: &StrategyEngine,
-        mut rx_book: Option<broadcast::Receiver<OrderBook>>,
-        mut rx_cndl_1s: Option<broadcast::Receiver<Candle>>,
-        mut rx_cndl_5m: Option<broadcast::Receiver<Candle>>, // we’ll optionally create this below
-        mut rx_tick: Option<broadcast::Receiver<Tick>>,
-        mut rx_bbo: Option<broadcast::Receiver<Bbo>>,
-    ) -> tokio::task::JoinHandle<()> {
-        tracing::info!("strategy: per-symbol task spawned");
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    // 1s candles
-                    res = async {
-                        if let Some(rx) = rx_cndl_1s.as_mut() { rx.recv().await.ok() } else { None }
-                    } => {
-                        if let Some(cndl) = res {
-                            if matches!(cndl.resolution, Resolution::Seconds(1)) {
-                                tracing::info!(
-                                    "Candle {}:  {} {}-{} O:{} H:{} L:{} C:{} V:{}",
-                                    cndl.symbol, cndl.resolution, cndl.time_start, cndl.time_end,
-                                    cndl.open, cndl.high, cndl.low, cndl.close, cndl.volume
-                                );
-                            }
-                        }
-                    }
-
-                    // 5m candles (if we wired them)
-                    res = async {
-                        if let Some(rx) = rx_cndl_5m.as_mut() { rx.recv().await.ok() } else { None }
-                    } => {
-                        if let Some(cndl) = res {
-                            if matches!(cndl.resolution, Resolution::Minutes(5)) {
-                                tracing::info!(
-                                    "5m {} {}-{} O:{} H:{} L:{} C:{} V:{}",
-                                    cndl.symbol, cndl.time_start, cndl.time_end,
-                                    cndl.open, cndl.high, cndl.low, cndl.close, cndl.volume
-                                );
-                            }
-                        }
-                    }
-
-                    // Order book (top of book logging)
-                    res = async {
-                        if let Some(rx) = rx_book.as_mut() { rx.recv().await.ok() } else { None }
-                    } => {
-                        if let Some(book) = res {
-                            if !(book.bids.is_empty() || book.asks.is_empty()) {
-                                tracing::info!(
-                                    "BOOK {} bid0:{:?} ask0:{:?} @{}",
-                                    book.symbol, book.bids[0], book.asks[0], book.time
-                                );
-                            }
-                        }
-                    }
-
-                    // Ticks
-                    res = async {
-                        if let Some(rx) = rx_tick.as_mut() { rx.recv().await.ok() } else { None }
-                    } => {
-                        if let Some(tk) = res {
-                            tracing::info!("TICK {} {} p:{} v:{}", tk.symbol, tk.time, tk.price, tk.size);
-                        }
-                    }
-
-                    // BBO
-                    res = async {
-                        if let Some(rx) = rx_bbo.as_mut() { rx.recv().await.ok() } else { None }
-                    } => {
-                        if let Some(qq) = res {
-                            tracing::info!(
-                                "BBO {} {} bid:{}({}) ask:{}({})",
-                                qq.symbol, qq.time, qq.bid, qq.bid_size, qq.ask, qq.ask_size
-                            );
-                        }
-                    }
-                }
-            }
-        })
-    }
-}
 
 #[async_trait]
 impl Strategy for DataSubscriptionExampleStrategy {
@@ -192,5 +103,95 @@ impl Strategy for DataSubscriptionExampleStrategy {
         self.tasks.clear();
 
         Ok(())
+    }
+}
+
+impl DataSubscriptionExampleStrategy {
+    pub fn new() -> Self {
+        Self {
+            tasks: DashMap::new(),
+        }
+    }
+
+    fn spawn_symbol_task(
+        &self,
+        _context: &StrategyEngine,
+        mut rx_book: Option<broadcast::Receiver<OrderBook>>,
+        mut rx_cndl_1s: Option<broadcast::Receiver<Candle>>,
+        mut rx_cndl_5m: Option<broadcast::Receiver<Candle>>, // we’ll optionally create this below
+        mut rx_tick: Option<broadcast::Receiver<Tick>>,
+        mut rx_bbo: Option<broadcast::Receiver<Bbo>>,
+    ) -> tokio::task::JoinHandle<()> {
+        tracing::info!("strategy: per-symbol task spawned");
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    // 1s candles
+                    res = async {
+                        if let Some(rx) = rx_cndl_1s.as_mut() { rx.recv().await.ok() } else { None }
+                    } => {
+                        if let Some(cndl) = res {
+                            if matches!(cndl.resolution, Resolution::Seconds(1)) {
+                                tracing::info!(
+                                    "Candle {}:  {} {}-{} O:{} H:{} L:{} C:{} V:{}",
+                                    cndl.symbol, cndl.resolution, cndl.time_start, cndl.time_end,
+                                    cndl.open, cndl.high, cndl.low, cndl.close, cndl.volume
+                                );
+                            }
+                        }
+                    }
+
+                    // 5m candles (if we wired them)
+                    res = async {
+                        if let Some(rx) = rx_cndl_5m.as_mut() { rx.recv().await.ok() } else { None }
+                    } => {
+                        if let Some(cndl) = res {
+                            if matches!(cndl.resolution, Resolution::Minutes(5)) {
+                                tracing::info!(
+                                    "5m {} {}-{} O:{} H:{} L:{} C:{} V:{}",
+                                    cndl.symbol, cndl.time_start, cndl.time_end,
+                                    cndl.open, cndl.high, cndl.low, cndl.close, cndl.volume
+                                );
+                            }
+                        }
+                    }
+
+                    // Order book (top of book logging)
+                    res = async {
+                        if let Some(rx) = rx_book.as_mut() { rx.recv().await.ok() } else { None }
+                    } => {
+                        if let Some(book) = res {
+                            if !(book.bids.is_empty() || book.asks.is_empty()) {
+                                tracing::info!(
+                                    "BOOK {} bid0:{:?} ask0:{:?} @{}",
+                                    book.symbol, book.bids[0], book.asks[0], book.time
+                                );
+                            }
+                        }
+                    }
+
+                    // Ticks
+                    res = async {
+                        if let Some(rx) = rx_tick.as_mut() { rx.recv().await.ok() } else { None }
+                    } => {
+                        if let Some(tk) = res {
+                            tracing::info!("TICK {} {} p:{} v:{}", tk.symbol, tk.time, tk.price, tk.size);
+                        }
+                    }
+
+                    // BBO
+                    res = async {
+                        if let Some(rx) = rx_bbo.as_mut() { rx.recv().await.ok() } else { None }
+                    } => {
+                        if let Some(qq) = res {
+                            tracing::info!(
+                                "BBO {} {} bid:{}({}) ask:{}({})",
+                                qq.symbol, qq.time, qq.bid, qq.bid_size, qq.ask, qq.ask_size
+                            );
+                        }
+                    }
+                }
+            }
+        })
     }
 }

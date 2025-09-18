@@ -20,6 +20,84 @@ use standard_lib::universes::inbuilt::r#static::plan_one_symbol;
 pub struct L3ExampleStrategy {
     tasks: DashMap<String, tokio::task::JoinHandle<()>>,
 }
+
+
+#[async_trait]
+impl Strategy for L3ExampleStrategy {
+    fn mode(&self) -> StrategyMode { StrategyMode::Live }
+
+    fn backtest_start(&self) -> DateTime<Utc> { Utc::now() } // unused in Live
+    fn backtest_end(&self)   -> DateTime<Utc> { Utc::now() } // unused in Live
+
+    fn universe_plans(&self) -> Vec<UniversePlan> {
+        vec![
+            plan_one_symbol(SymbolId("MNQ".into()), Exchange::CME, "Databento".into())
+        ]
+    }
+
+    // Ask for exactly what you want. If Databento MBO is wired, the engine will derive BBO/BOOK/TICKS.
+    fn feeds(&self) -> FeedKind {
+        FeedKind::MBO | FeedKind::BBO | FeedKind::BOOK // add FeedKind::TICKS / ::CANDLES if you want them too
+    }
+
+    async fn run(&self, ctx: &StrategyEngine, mut rx: mpsc::Receiver<StrategyEvent>) -> anyhow::Result<()> {
+        while let Some(evt) = rx.recv().await {
+            match evt {
+                StrategyEvent::SymbolAdded { id, sec, mut feeds, .. } => {
+                    let sym_key = id.to_string();
+
+                    // 1) Get the canonical L3 book handle
+                    let Some(book) = ctx.book_handle(&sym_key, sec.exchange) else {
+                        // If None, likely your provider/engine hasn’t attached an MBO sink yet
+                        tracing::warn!("no L3 book yet for {sym_key}");
+                        continue;
+                    };
+
+                    // 2) Register for L3 nudges — choose actions and (optionally) timer cadence
+                    let interest = BookInterest {
+                        actions: MboActionMask::ADD
+                            | MboActionMask::MODIFY
+                            | MboActionMask::CANCEL
+                            | MboActionMask::TRADE
+                            | MboActionMask::FILL,
+                        // e.g., also get a periodic nudge every 50ms (engine emits if configured)
+                        timer_interval_ns: Some(50_000_000),
+                    };
+                    let rx_mbo = ctx.register_book_interest(&sym_key, interest);
+
+                    // 3) Optionally also listen to BBO/Tick/OrderBook/Candles from the hub (derived or vendor)
+                    let rx_bbo      = feeds.bbo_rx.take();   // already subscribed by engine based on FeedKind
+                    let rx_tick     = feeds.tick_rx.take();
+                    let rx_book     = feeds.book_rx.take();
+                    let rx_cndl_1s  = feeds.candle_rx.take(); // if you also asked for CANDLES
+
+                    let handle = self.spawn_symbol_task(
+                        ctx.clone(),
+                        sym_key.clone(),
+                        sec.exchange,
+                        rx_mbo,
+                        book,
+                        rx_bbo,
+                        rx_tick,
+                        rx_book,
+                        rx_cndl_1s,
+                    );
+                    self.tasks.insert(sym_key, handle);
+                }
+
+                StrategyEvent::SymbolRemoved { id, .. } => {
+                    if let Some((_, h)) = self.tasks.remove(&id) { h.abort(); }
+                }
+            }
+        }
+
+        // shutdown cleanup
+        for kv in self.tasks.iter() { kv.value().abort(); }
+        self.tasks.clear();
+        Ok(())
+    }
+}
+
 #[allow(dead_code)]
 impl L3ExampleStrategy {
     pub fn new() -> Self { Self { tasks: DashMap::new() } }
@@ -113,81 +191,5 @@ impl L3ExampleStrategy {
                 }
             }
         })
-    }
-}
-
-#[async_trait]
-impl Strategy for L3ExampleStrategy {
-    fn mode(&self) -> StrategyMode { StrategyMode::Live }
-
-    fn backtest_start(&self) -> DateTime<Utc> { Utc::now() } // unused in Live
-    fn backtest_end(&self)   -> DateTime<Utc> { Utc::now() } // unused in Live
-
-    fn universe_plans(&self) -> Vec<UniversePlan> {
-        vec![
-            plan_one_symbol(SymbolId("MNQ".into()), Exchange::CME, "Databento".into())
-        ]
-    }
-
-    // Ask for exactly what you want. If Databento MBO is wired, the engine will derive BBO/BOOK/TICKS.
-    fn feeds(&self) -> FeedKind {
-        FeedKind::MBO | FeedKind::BBO | FeedKind::BOOK // add FeedKind::TICKS / ::CANDLES if you want them too
-    }
-
-    async fn run(&self, ctx: &StrategyEngine, mut rx: mpsc::Receiver<StrategyEvent>) -> anyhow::Result<()> {
-        while let Some(evt) = rx.recv().await {
-            match evt {
-                StrategyEvent::SymbolAdded { id, sec, mut feeds, .. } => {
-                    let sym_key = id.to_string();
-
-                    // 1) Get the canonical L3 book handle
-                    let Some(book) = ctx.book_handle(&sym_key, sec.exchange) else {
-                        // If None, likely your provider/engine hasn’t attached an MBO sink yet
-                        tracing::warn!("no L3 book yet for {sym_key}");
-                        continue;
-                    };
-
-                    // 2) Register for L3 nudges — choose actions and (optionally) timer cadence
-                    let interest = BookInterest {
-                        actions: MboActionMask::ADD
-                            | MboActionMask::MODIFY
-                            | MboActionMask::CANCEL
-                            | MboActionMask::TRADE
-                            | MboActionMask::FILL,
-                        // e.g., also get a periodic nudge every 50ms (engine emits if configured)
-                        timer_interval_ns: Some(50_000_000),
-                    };
-                    let rx_mbo = ctx.register_book_interest(&sym_key, interest);
-
-                    // 3) Optionally also listen to BBO/Tick/OrderBook/Candles from the hub (derived or vendor)
-                    let rx_bbo      = feeds.bbo_rx.take();   // already subscribed by engine based on FeedKind
-                    let rx_tick     = feeds.tick_rx.take();
-                    let rx_book     = feeds.book_rx.take();
-                    let rx_cndl_1s  = feeds.candle_rx.take(); // if you also asked for CANDLES
-
-                    let handle = self.spawn_symbol_task(
-                        ctx.clone(),
-                        sym_key.clone(),
-                        sec.exchange,
-                        rx_mbo,
-                        book,
-                        rx_bbo,
-                        rx_tick,
-                        rx_book,
-                        rx_cndl_1s,
-                    );
-                    self.tasks.insert(sym_key, handle);
-                }
-
-                StrategyEvent::SymbolRemoved { id, .. } => {
-                    if let Some((_, h)) = self.tasks.remove(&id) { h.abort(); }
-                }
-            }
-        }
-
-        // shutdown cleanup
-        for kv in self.tasks.iter() { kv.value().abort(); }
-        self.tasks.clear();
-        Ok(())
     }
 }
