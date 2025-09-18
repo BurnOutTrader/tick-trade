@@ -28,7 +28,7 @@ Future Proof
 
 
 # Design
-- Strategies run as libraries from launched into the strategy manager from main.
+- Strategies run from crates launched into the strategy manager from main.
 - multiple strategies can run simultaneously.  
 - future hot loading
 - backtest strategies get a unique engine context and market data 
