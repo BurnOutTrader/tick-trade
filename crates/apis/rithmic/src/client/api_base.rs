@@ -13,7 +13,7 @@ use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 use tokio::time::{sleep, Duration, MissedTickBehavior};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{stream, SinkExt, StreamExt};
 use futures_util::stream::{SplitSink, SplitStream};
 use tokio::time;
 #[allow(unused_imports)]
@@ -43,6 +43,8 @@ use standard_lib::engine_core::public_classes::{FeedKind, MarketDataRequest};
 use standard_lib::securities::symbols::Exchange;
 use crate::client::rithmic_proto_objects::rti::{RequestTickBarReplay, RequestTimeBarReplay};
 use crate::client::rithmic_proto_objects::rti::request_time_bar_replay::{Direction, TimeOrder};
+
+
 
 const TIME_OUT_MS: u64 = 30000;
 pub const TEMPLATE_VERSION: &str = "5.29";
@@ -493,7 +495,7 @@ impl RithmicApiClient {
     }
 
     pub async fn resubscribe_all_for(self: &Arc<Self>, plant: SysInfraType) {
-        use futures_util::stream::{self, StreamExt};
+
 
         // 1) Snapshot and drop lock before awaiting
         let entries: Vec<ActiveSub> = {
