@@ -20,6 +20,3 @@ parking_lot = { workspace = true }
 ahash = {workspace = true}
 lazy_static = "1.5.0"
 uuid = { workspace = true }
-zstd = { version = "0.13.3", features = ["zstdmt"] }
-crc32fast = "1.5.0"
-tempfile = "3.22.0"
