@@ -19,7 +19,6 @@ Future Proof
 - dynamic UniverseSelection to allow development of more complex strategies in the future.
 ---
 
-
 # Design
 - Strategies run as libraries from launched into the strategy manager from main.
 - multiple strategies can run simultaneously.  
