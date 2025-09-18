@@ -461,10 +461,10 @@ impl RithmicApiClient {
 
         let mut delay = Duration::from_secs(2);
         let max_delay = Duration::from_secs(30);
-        const tz: Tz = chrono_tz::America::Chicago;
+        const TZ: Tz = chrono_tz::America::Chicago;
         loop {
             let now = chrono::Utc::now();
-            let chicago_time = now.with_timezone(&tz);
+            let chicago_time = now.with_timezone(&TZ);
 
             if is_weekend_or_off_hours(chicago_time) {
                 let next_market_open = next_chicago_market_open(chicago_time);
@@ -592,32 +592,6 @@ impl RithmicApiClient {
                 }
             }
         });
-    }
-
-    /// Wait until no in-flight RPCs nor staged continuations exist for `plant`.
-    /// Returns Ok(true) if drained, Ok(false) on timeout.
-    pub async fn await_rpc_settle(
-        self: &Arc<Self>,
-        plant: SysInfraType,
-        timeout: std::time::Duration,
-    ) -> anyhow::Result<bool> {
-        use tokio::time::{sleep, Instant};
-
-        let deadline = Instant::now() + timeout;
-        loop {
-            // Fast snapshot without holding locks across await.
-            let pending_empty = self.pending.iter().all(|kv| kv.key().0 != plant);
-            let rendezvous_empty = self.rendezvous.iter().all(|kv| kv.key().0 != plant);
-
-            if pending_empty && rendezvous_empty {
-                return Ok(true);
-            }
-            if Instant::now() >= deadline {
-                return Ok(false);
-            }
-            // Small backoff; cheap and keeps CPU low.
-            sleep(std::time::Duration::from_millis(10)).await;
-        }
     }
 
     /// Returns counts of pending and staged entries for a plant.
