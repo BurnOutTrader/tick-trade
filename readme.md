@@ -142,13 +142,22 @@ This ensures all subscriptions, time queries, and feed helpers automatically use
    git clone <repo>
    cd tick-trade
 
+3. Create a .env file in the workspace root with the following:
 
 RITHMIC_USER=...
+
 RITHMIC_PASSWORD=...
-RITHMIC_SERVER=Chicago
+
+RITHMIC_SERVER=Chicago (any supported server)
+
 RITHMIC_SYSTEM="Rithmic 01" or "APEX" etc
-RITHMIC_APP_NAME=...
-RITHMIC_APP_VERSION=...
-RITHMIC_FCM_ID=... 
-RITHMIC_IB_ID=...  
-RITHMIC_USER_TYPE=...
+
+RITHMIC_APP_NAME=... (you need an app name registered with Rithmic)
+
+RITHMIC_APP_VERSION=... (you need an app version registered with Rithmic)
+
+RITHMIC_FCM_ID=... example "Apex"
+
+RITHMIC_IB_ID=...  example "Apex"
+
+RITHMIC_USER_TYPE=3 (prop firm trader)
