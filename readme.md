@@ -3,6 +3,8 @@
 A Rust workspace for building a low-latency trading engine with unified market data routing, vendor integrations (Rithmic), and reusable strategy components.  
 The architecture is designed so that the **same strategy code** runs in both **live** and **backtest** modes with minimal branching.
 
+Supporting L1, L2, and L3 market data. (untested)
+
 Planned vendor support:
 - Rithmic
 - ProjectX
@@ -17,6 +19,7 @@ Future Proof
 - dynamic `MarketDataProvider` traits that can be implemented by any vendor.
 - dynamic `HistoricalDataProvider` traits that can be implemented by any vendor.
 - dynamic UniverseSelection to allow development of more complex strategies in the future.
+- dynamic 'Brokerage' traits that can be implemented by any broker.
 ---
 
 # Design
@@ -25,7 +28,6 @@ Future Proof
 - future hot loading
 - backtest strategies get a unique engine context and market data 
 - live strategies share the same engine context and market data
-- 
 
 # Next Steps
 - Make history serialization database using DuckDb
