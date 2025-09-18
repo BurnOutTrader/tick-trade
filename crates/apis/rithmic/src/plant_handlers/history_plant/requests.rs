@@ -18,8 +18,9 @@ impl RithmicApiClient {
           Resolution::Weekly => (crate::client::rithmic_proto_objects::rti::request_time_bar_update::BarType::WeeklyBar,None),
             _ => return Err(RithmicApiError::MappingError("Unacceptable resolution for time bar update".to_string())),
         };
+        const TID: i32 = 200;
         let req = RequestTimeBarUpdate {
-            template_id: 200,
+            template_id: TID,
             user_msg: vec![],
             symbol: Some(symbol.clone()),
             exchange: Some(exchange.clone()),

@@ -25,8 +25,9 @@ impl RithmicApiClient {
         request: i32,
         update_bits: request_market_data_update::UpdateBits
     ) -> Result<(), RithmicApiError> {
+        const TID: i32 = 100;
         let req = RequestMarketDataUpdate {
-            template_id: 100,
+            template_id: TID,
             user_msg: vec![],
             symbol: Some(symbol.clone()),
             exchange: Some(exchange.clone()),
@@ -60,8 +61,9 @@ impl RithmicApiClient {
         exchange: String,
         expiration_date: Option<String>
     ) -> Result<SmallVec<Bytes, 8>, RithmicApiError> {
+        const TID: i32 = 102;
         let req = RequestGetInstrumentByUnderlying {
-            template_id: 102,
+            template_id: TID,
             user_msg: vec![],
             exchange: Some(exchange),
             underlying_symbol: Some(underlying_symbol),
@@ -78,8 +80,9 @@ impl RithmicApiClient {
         request: rti::request_market_data_update_by_underlying::Request,
         update_bits: rti::request_market_data_update_by_underlying::UpdateBits
     ) -> Result<(), RithmicApiError> {
+        const TID: i32 = 105;
         let req = RequestMarketDataUpdateByUnderlying {
-            template_id: 105,
+            template_id: TID,
             user_msg: vec![],
             exchange: Some(exchange),
             expiration_date,
@@ -94,8 +97,9 @@ impl RithmicApiClient {
         self: &Arc<Self>,
         tick_size_type: String,
     ) -> Result<SmallVec<Bytes, 8>, RithmicApiError> {
+        const TID: i32 = 107;
         let req = RequestGiveTickSizeTypeTable {
-            template_id: 107,
+            template_id: TID,
             user_msg: vec![],
             tick_size_type: Some(tick_size_type),
         };
@@ -110,8 +114,9 @@ impl RithmicApiClient {
         instrument_type: InstrumentType,
         pattern: Pattern,
     ) -> Result<SmallVec<Bytes, 8>, RithmicApiError> {
+        const TID: i32 = 109;
         let req = RequestSearchSymbols {
-            template_id: 109,
+            template_id: TID,
             user_msg: vec![],
             search_text: Some(search_text),
             exchange,
@@ -127,8 +132,9 @@ impl RithmicApiClient {
         exchange: Option<String>,
         give_toi_products_only: bool,
     ) -> Result<SmallVec<Bytes, 8>, RithmicApiError> {
+        const TID: i32 = 111;
         let req = RequestProductCodes {
-            template_id: 111,
+            template_id: TID,
             user_msg: vec![],
             exchange,
             give_toi_products_only: Some(give_toi_products_only),
@@ -142,8 +148,9 @@ impl RithmicApiClient {
         exchange: Option<String>,
         need_updates: bool
     ) -> Result<SmallVec<Bytes, 8>, RithmicApiError> {
+        const TID: i32 = 113;
         let req = RequestFrontMonthContract {
-            template_id: 113,
+            template_id: TID,
             user_msg: vec![],
             symbol: Some(symbol),
             exchange,
@@ -159,8 +166,9 @@ impl RithmicApiClient {
         exchange: String,
         depth_price: f64
     ) -> Result<(), RithmicApiError> {
+        const TID: i32 = 115;
         let req = RequestDepthByOrderSnapshot {
-            template_id: 115,
+            template_id: TID,
             user_msg: vec![],
             symbol: Some(symbol),
             exchange: Some(exchange),
@@ -176,8 +184,9 @@ impl RithmicApiClient {
         exchange: String,
         depth_price: f64
     ) -> Result<(), RithmicApiError> {
+        const TID: i32 = 117;
         let req = RequestDepthByOrderUpdates {
-            template_id: 117,
+            template_id: TID,
             user_msg: vec![],
             request: Some(1),
             symbol: Some(symbol),
@@ -198,8 +207,9 @@ impl RithmicApiClient {
         symbol: String,
         exchange: Option<String>,
     ) -> Result<SmallVec<Bytes, 8>, RithmicApiError> {
+        const TID: i32 = 119;
         let req = RequestGetVolumeAtPrice {
-            template_id: 119,
+            template_id: TID,
             user_msg: vec![],
             symbol: Some(symbol),
             exchange,
@@ -212,8 +222,9 @@ impl RithmicApiClient {
         symbol: String,
         exchange: Option<String>,
     ) -> Result<SmallVec<Bytes, 8>, RithmicApiError> {
+        const TID: i32 = 121;
         let req = RequestAuxilliaryReferenceData {
-            template_id: 121,
+            template_id: TID,
             user_msg: vec![],
             symbol: Some(symbol),
             exchange,

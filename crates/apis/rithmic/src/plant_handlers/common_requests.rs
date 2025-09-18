@@ -17,8 +17,9 @@ impl RithmicApiClient {
     ///
     /// error: RithmicApiError
     pub async fn request_reference_data(self: &Arc<Self>, plant: SysInfraType, symbol: String, exchange: String) -> Result<SmallVec<Bytes, 8>, RithmicApiError> {
+        const TID: i32 = 14;
         let req = RequestReferenceData {
-            template_id: 14,
+            template_id: TID,
             user_msg: vec![],
             symbol: Some(symbol.clone()),
             exchange: Some(exchange.clone()),
@@ -32,8 +33,9 @@ impl RithmicApiClient {
     /// "P.T-t", "YPF-t", "Profit.Trade"],
     /// has_aggregated_quotes: [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false] }
     pub async fn request_system_info(self: &Arc<Self>, plant: SysInfraType)  -> Result<SmallVec<Bytes, 8>, RithmicApiError> {
+        const TID: i32 = 16;
         const REQ: RequestRithmicSystemInfo = RequestRithmicSystemInfo {
-            template_id: 16,
+            template_id: TID,
             user_msg: vec![],
         };
         self.send_with_reply(plant, REQ).await
@@ -46,8 +48,9 @@ impl RithmicApiClient {
     /// "wss://rprotocol-au.rithmic.com:443", "wss://rprotocol-ie.rithmic.com:443", "wss://rprotocol-jp.rithmic.com:443",
     /// "wss://rprotocol-de.rithmic.com:443", "wss://rprotocol-za.rithmic.com:443", "wss://rprotocol-nyc.rithmic.com:443"] }
     pub async fn request_system_gateway_info(self: &Arc<Self>, plant: SysInfraType, system_name: String)  -> Result<SmallVec<Bytes, 8>, RithmicApiError> {
+        const TID: i32 = 20;
         let req = RequestRithmicSystemGatewayInfo {
-            template_id: 20,
+            template_id: TID,
             user_msg: vec![],
             system_name: Some(system_name),
         };

@@ -211,8 +211,9 @@ impl RithmicApiClient {
 
         // After handshake, we can send confidential data
         // Login Request 10 From Client
+        const TID: i32 = 10;
         let login_request = RequestLogin {
-            template_id: 10,
+            template_id: TID,
             template_version: Some(TEMPLATE_VERSION.to_string()),
             user_msg: vec![],
             user: Some(self.credentials.user.clone()),
@@ -421,8 +422,9 @@ impl RithmicApiClient {
         mut write_stream: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
     ) -> Result<(), RithmicApiError> {
         //Logout Request 12
+        const TID: i32 = 12;
         let logout_request = RequestLogout {
-            template_id: 12,
+            template_id: TID,
             user_msg: vec![format!("{} Signing Out", self.credentials.app_name)],
         };
 
@@ -578,9 +580,10 @@ impl RithmicApiClient {
 
                 // If waiting until the next tick risks crossing the deadline, send now.
                 if elapsed + tick_period >= hb_period - safety {
+                    const TID: i32 = 18;
                     let now = Utc::now();
                     let hb = RequestHeartbeat {
-                        template_id: 18,
+                        template_id: TID,
                         user_msg: vec![],
                         ssboe: Some(now.timestamp() as i32),
                         usecs: Some(now.timestamp_subsec_micros() as i32),
@@ -738,11 +741,11 @@ impl RithmicApiClient {
     pub async fn replay_bars(self: &Arc<RithmicApiClient>, symbol: String, exchange: Exchange, resolution: Resolution, window_start: DateTime<Utc>, window_end: DateTime<Utc>) ->  Result<ChunkVec, RithmicApiError> {
         const PLANT: SysInfraType = SysInfraType::HistoryPlant;
         // Send the request based on data type
-
+        const TID: i32 = 206;
         match resolution {
             Resolution::TickBars(num) => {
                 let req = RequestTickBarReplay {
-                    template_id: 206,
+                    template_id: TID,
                     user_msg: vec![],
                     symbol: Some(symbol),
                     exchange: Some(exchange.to_string()),
