@@ -125,7 +125,7 @@ impl Strategy for DataSubscriptionExampleStrategy {
     }
 
     fn feeds(&self) -> FeedKind {
-        FeedKind::CANDLES
+        FeedKind::CANDLES | FeedKind::BBO
     }
 
     /// One long-lived runner per (strategy, mode). The engine holds guards and
