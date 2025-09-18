@@ -1,0 +1,25 @@
+[package]
+name = "tick-trade"
+version = "0.1.0"
+edition.workspace = true
+
+[lib]
+name = "tick_trade"
+path = "src/lib.rs"
+
+[dependencies]
+rithmic = {path = "../apis/rithmic"}
+standard_lib = { path = "../standard_lib" }
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
+dashmap = { workspace = true }
+dotenvy = { workspace = true }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "sync", "time"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+libloading = { workspace = true }
+ahash = {workspace = true}
+dotenv = "0.15.0"
+rust_decimal = {workspace = true}

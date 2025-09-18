@@ -1,0 +1,33 @@
+[package]
+name = "rithmic"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+standard_lib = { path = "../../standard_lib" }
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
+dashmap = { workspace = true }
+dotenvy = { workspace = true }
+futures-util = { workspace = true }
+lazy_static = { workspace = true }
+prost = { workspace = true }
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+strum_macros = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "sync", "time"] }
+tokio-tungstenite = { workspace = true, features = ["stream", "native-tls"] }
+toml = { workspace = true }
+tungstenite = { workspace = true }
+tracing = { workspace = true }
+bytes = { workspace = true }
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+fastrand = { workspace = true }
+smallvec = "2.0.0-alpha.11"
+ahash = {workspace = true}
+memchr = "2.7.5"
+concurrent-queue = { workspace = true }
+uuid = { workspace = true }
