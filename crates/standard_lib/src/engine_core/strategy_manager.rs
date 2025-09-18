@@ -279,7 +279,7 @@ impl StrategyManager {
     }
 
     /// Advance all strategies using their **context’s** notion of time:
-    /// - Live: wall clock from `EngineCtx.live_clock`
+    /// - Live: `system clock`
     /// - Backtest: simulated clock from `EngineCtx.sim_clock`
     ///
     /// For each strategy:
