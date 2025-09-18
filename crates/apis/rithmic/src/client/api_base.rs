@@ -33,6 +33,7 @@ use crate::plant_handlers::{ChunkVec, HasUserMsg, PendingEntry};
 use crate::plant_handlers::history_plant::handle_history_plant::match_history_plant_id;
 use std::sync::atomic::AtomicBool;
 use anyhow::{anyhow, Result};
+use chrono_tz::Tz;
 use smallvec::SmallVec;
 use strum_macros::Display;
 use standard_lib::engine_core::api_traits::{HistoricalDataProvider, MarketDataProvider};
@@ -460,10 +461,10 @@ impl RithmicApiClient {
 
         let mut delay = Duration::from_secs(2);
         let max_delay = Duration::from_secs(30);
-
+        const tz: Tz = chrono_tz::America::Chicago;
         loop {
             let now = chrono::Utc::now();
-            let chicago_time = now.with_timezone(&chrono_tz::America::Chicago);
+            let chicago_time = now.with_timezone(&tz);
 
             if is_weekend_or_off_hours(chicago_time) {
                 let next_market_open = next_chicago_market_open(chicago_time);
