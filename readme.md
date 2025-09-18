@@ -4,6 +4,9 @@ A Rust workspace for building a low-latency trading engine with unified market d
 The architecture is designed so that the **same strategy code** runs in both **live** and **backtest** modes with minimal branching.
 
 Supporting L1, L2, and L3 market data. (untested)
+[Example strategies](crates/app/src/user_strategies) are included in the `crates/app/src/user_strategies` directory.
+
+Incomplete work in progress. Help welcome!
 
 Planned vendor support:
 - Rithmic
@@ -21,6 +24,8 @@ Future Proof
 - dynamic UniverseSelection to allow development of more complex strategies in the future.
 - dynamic 'Brokerage' traits that can be implemented by any broker.
 ---
+
+
 
 # Design
 - Strategies run as libraries from launched into the strategy manager from main.
