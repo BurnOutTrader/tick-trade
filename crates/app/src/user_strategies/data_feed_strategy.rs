@@ -16,7 +16,6 @@ pub struct DataSubscriptionExampleStrategy {
     tasks: DashMap<String, tokio::task::JoinHandle<()>>,
 }
 
-
 #[async_trait]
 impl Strategy for DataSubscriptionExampleStrategy {
     fn mode(&self) -> StrategyMode {
