@@ -279,7 +279,7 @@ pub fn upsert_partition(
 }
 
 /// Internal helper to resolve dataset_id from string keys.
-fn resolve_dataset_id(
+pub fn resolve_dataset_id(
     conn: &Connection,
     provider: &str,
     symbol: &str,
