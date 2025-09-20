@@ -219,9 +219,6 @@ pub(crate) fn map_rithmic_bbo(m: BestBidOffer) -> Option<Bbo> {
     let ask_size = d_from_i32(m.ask_size)?;
     let time     = ts_from(m.ssboe, m.usecs); // your helper: (ssboe,usecs)->Utc
 
-    let ts_event = None; // not present on this msg
-    let ts_recv  = None; // not present on this msg
-
     Some(Bbo {
         symbol,
         exchange,
@@ -233,10 +230,7 @@ pub(crate) fn map_rithmic_bbo(m: BestBidOffer) -> Option<Bbo> {
         bid_orders: m.bid_orders.map(|v| v as u32),
         ask_orders: m.ask_orders.map(|v| v as u32),
         venue_seq: None,
-        ts_event,
-        ts_recv,
         is_snapshot: m.is_snapshot,
-        flags: None,
     })
 }
 
