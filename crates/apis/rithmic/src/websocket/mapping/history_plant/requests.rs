@@ -1,8 +1,9 @@
 use std::sync::Arc;
 use bytes::Bytes;
 use standard_lib::market_data::base_data::Resolution;
-use crate::websocket::api_base::{ActiveSub, RithmicApiClient, SubType};
+use crate::websocket::client::RithmicApiClient;
 use crate::websocket::errors::RithmicApiError;
+use crate::websocket::models::{ActiveSub, SubType};
 use crate::websocket::rithmic_proto_objects::rti::request_login::SysInfraType;
 use crate::websocket::rithmic_proto_objects::rti::RequestTimeBarUpdate;
 const PLANT: SysInfraType = SysInfraType::HistoryPlant;

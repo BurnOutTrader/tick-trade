@@ -16,7 +16,7 @@ use standard_lib::engine_core::provider_resolver::{ProviderResolver, SecurityRes
 use standard_lib::market_data::base_data::{Candle, Resolution};
 use standard_lib::securities::market_hours::{candle_end, hours_for_exchange, next_session_open_after};
 use standard_lib::securities::symbols::Exchange;
-use crate::websocket::api_base::RithmicApiClient;
+use crate::websocket::client::RithmicApiClient;
 use crate::websocket::rithmic_proto_objects::rti::{OrderBook, ResponseTimeBarReplay};
 use crate::websocket::rithmic_proto_objects::rti::request_login::SysInfraType;
 #[derive(Clone, Debug)]

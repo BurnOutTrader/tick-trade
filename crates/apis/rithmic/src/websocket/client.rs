@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::websocket::helpers::{is_weekend_or_off_hours, next_chicago_market_open};
+use crate::websocket::helpers::{fast_detect_final, fast_extract_cid, fast_extract_template_id, is_weekend_or_off_hours, next_chicago_market_open};
 use std::io::Cursor;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -20,31 +20,29 @@ use tokio::time;
 use super::rithmic_proto_objects::rti::{RequestHeartbeat, RequestLogin, RequestLogout, RequestRithmicSystemInfo, ResponseLogin, ResponseRithmicSystemInfo};
 use crate::websocket::errors::RithmicApiError;
 use crate::websocket::rithmic_proto_objects::rti::request_login::SysInfraType;
-use crate::websocket::server_models::{RithmicCredentials, RITHMIC_SERVERS};
 use tracing::{error, info, warn};
-use crate::websocket::outgoing::Outgoing;
-use crate::plant_handlers::handle_repo_plant::match_repo_plant_id;
-use crate::plant_handlers::tick_plant::handle_tick_plant::match_ticker_plant_id;
+use crate::websocket::models::{ActiveSub, LiveSub, Outgoing, Staged, RITHMIC_SERVERS};
+use crate::websocket::mapping::handle_repo_plant::match_repo_plant_id;
+use crate::websocket::mapping::tick_plant::handle_tick_plant::match_ticker_plant_id;
 use bytes::Bytes;
 use standard_lib::market_data::base_data::Resolution;
 use standard_lib::engine_core::data_events::SubscriptionHandle;
 use crate::websocket::rithmic_proto_objects::rti::request_market_data_update::UpdateBits;
-use crate::plant_handlers::{ChunkVec, HasUserMsg, PendingEntry};
-use crate::plant_handlers::history_plant::handle_history_plant::match_history_plant_id;
+use crate::websocket::mapping::{ChunkVec, HasUserMsg, PendingEntry};
+use crate::websocket::mapping::history_plant::handle_history_plant::match_history_plant_id;
 use std::sync::atomic::AtomicBool;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use chrono_tz::Tz;
 use smallvec::SmallVec;
-use strum_macros::Display;
 use standard_lib::engine_core::api_traits::{HistoricalDataProvider, MarketDataProvider};
 use standard_lib::engine_core::event_hub::EventHub;
 use standard_lib::engine_core::provider_resolver::{ProviderResolver, SecurityResolver};
 use standard_lib::engine_core::public_classes::{FeedKind, MarketDataRequest};
 use standard_lib::securities::symbols::Exchange;
+use crate::common::models::RithmicCredentials;
+use crate::websocket::{helpers, models};
 use crate::websocket::rithmic_proto_objects::rti::{RequestTickBarReplay, RequestTimeBarReplay};
 use crate::websocket::rithmic_proto_objects::rti::request_time_bar_replay::{Direction, TimeOrder};
-
-
 
 const TIME_OUT_MS: u64 = 30000;
 pub const TEMPLATE_VERSION: &str = "5.29";
@@ -515,7 +513,7 @@ impl RithmicApiClient {
                 let concurrency = 8usize;
                 stream::iter(entries)
                     .for_each_concurrent(concurrency, |s| async move {
-                        let Some(bits) = bits_for(&s.kind) else {
+                        let Some(bits) = models::bits_for(&s.kind) else {
                             error!("Invalid sub type in resubscribe: {:?}", s.kind);
                             return;
                         };
@@ -632,7 +630,7 @@ impl RithmicApiClient {
                     let key = (process_plant, cid);
 
                     // Prefer the reader's hint; if absent, fall back to scanning again here.
-                    let final_now = if is_final_hint { true } else { fast_detect_final(&payload).unwrap_or(false) };
+                    let final_now = if is_final_hint { true } else { helpers::fast_detect_final(&payload).unwrap_or(false) };
 
                     if let Some(mut entry_ref) = self_clone.pending.get_mut(&key) {
                         // We already have a waiter; just accumulate.
@@ -841,7 +839,7 @@ impl MarketDataProvider for RithmicApiClient {
 
 /// Small helper to DRY the subscribe/unsubscribe logic.
 /// Mirrors your existing branching for TICKS/BBO/BOOK/CANDLES.
-async fn do_live_req(client: &Arc<RithmicApiClient>, req: MarketDataRequest, action: i32) -> Result<()> {
+pub(crate) async fn do_live_req(client: &Arc<RithmicApiClient>, req: MarketDataRequest, action: i32) -> Result<()> {
     // Ticks (LastTrade via Market Data Update 100) or tick bars
     if req.kinds.intersects(FeedKind::TICKS) {
         if let Some(res) = req.resolution.clone() {
@@ -912,216 +910,4 @@ async fn do_live_req(client: &Arc<RithmicApiClient>, req: MarketDataRequest, act
     Ok(())
 }
 
-/// RAII subscription; on drop or explicit `unsubscribe()` sends Unsubscribe requests once.
-struct LiveSub {
-    client: Arc<RithmicApiClient>,
-    req: MarketDataRequest,
-    id: u64,
-    closed: AtomicBool,
-}
 
-impl SubscriptionHandle for LiveSub {
-    fn unsubscribe(&self) -> Result<(), anyhow::Error> {
-        if self.closed.swap(true, Ordering::SeqCst) {
-            return Err(anyhow!("Already unsubscribed"));
-        }
-        let client = self.client.clone();
-        let req = self.req.clone();
-        // Fire-and-forget; if you want backpressure, return a JoinHandle or make this async.
-        tokio::spawn(async move {
-            if let Err(e) = do_live_req(&client, req, 2).await {
-                tracing::warn!("unsubscribe failed: {e}");
-            }
-        });
-        Ok(())
-    }
-    fn id(&self) -> u64 { self.id }
-}
-
-impl Drop for LiveSub {
-    fn drop(&mut self) {
-        if self.closed.swap(true, Ordering::SeqCst) { return; }
-        let client = self.client.clone();
-        let req = self.req.clone();
-        tokio::spawn(async move {
-            if let Err(e) = do_live_req(&client, req, 2).await {
-                tracing::warn!("drop-unsubscribe failed: {e}");
-            }
-        });
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Display, Eq)]
-pub enum SubType {
-    Bbo,
-    OrderBook,
-    LastTrade,
-    TimeBar,
-    #[allow(dead_code)]
-    TickBar
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct ActiveSub {
-    symbol: String,
-    exchange: String,
-    resolution: Option<Resolution>,
-    kind: SubType,
-}
-
-impl ActiveSub {
-    pub(crate) fn new(symbol: String, exchange: String, resolution: Option<Resolution>, kind: SubType) -> Self {
-        Self {
-            symbol,
-            exchange,
-            resolution,
-            kind,
-        }
-    }
-}
-
-fn bits_for(kind: &SubType) -> Option<UpdateBits> {
-    match kind {
-        SubType::Bbo        => Some(UpdateBits::Bbo),
-        SubType::OrderBook  => Some(UpdateBits::OrderBook),
-        SubType::LastTrade  => Some(UpdateBits::LastTrade),
-        _ => None,
-    }
-}
-
-
-/// Buffer for early/partial responses keyed by (plant, cid).
-/// Uses `SmallVec<Bytes, 8>` so the common 1–8 segment replies avoid heap allocs.
-/// We store `Bytes` by value and never clone in the hot path; they are ref-counted slices.
-#[derive(Default)]
-pub(crate) struct Staged {
-    chunks: SmallVec<Bytes, 8>,
-    final_seen: bool,
-}
-
-
-/// Fast varint decoder; returns (value, bytes_read) or None.
-#[inline]
-pub(crate) fn read_varint(buf: &[u8], mut i: usize) -> Option<(u64, usize)> {
-    let mut x: u64 = 0;
-    let mut s: u32 = 0;
-    let start = i;
-    while i < buf.len() {
-        let b = buf[i] as u64;
-        i += 1;
-        x |= (b & 0x7F) << s;
-        if b & 0x80 == 0 { return Some((x, i - start)); }
-        s += 7;
-        if s >= 64 { return None; }
-    }
-    None
-}
-
-/// Minimal protobuf scan to decide if this payload is FINAL (has `rp_code` = field #132766)
-/// or a CONTINUATION (has `rq_handler_rp_code` = field #132764). Returns Some(true)=final, Some(false)=cont, None=unknown.
-#[inline]
-fn fast_detect_final(payload: &bytes::Bytes) -> Option<bool> {
-    const RQ_HANDLER_RP_CODE: u64 = 132_764;
-    const RP_CODE: u64 = 132_766;
-
-    let buf = payload.as_ref();
-    let mut i = 0usize;
-
-    while i < buf.len() {
-        let (key, klen) = read_varint(buf, i)?;
-        i += klen;
-
-        let field = key >> 3;
-        let wt = (key & 7) as u8;
-
-        // Early exits: as soon as we identify the field, we can return.
-        if field == RP_CODE {
-            return Some(true);
-        }
-        if field == RQ_HANDLER_RP_CODE {
-            return Some(false);
-        }
-
-        // Not a target field — skip its value by wire type.
-        match wt {
-            0 => { let (_, n) = read_varint(buf, i)?; i += n; }                 // varint
-            1 => { i += 8; }                                                    // 64-bit
-            2 => { let (l, n) = read_varint(buf, i)?; i += n + (l as usize); }  // len-delimited
-            5 => { i += 4; }                                                    // 32-bit
-            _ => return None,
-        }
-    }
-    None
-}
-
-/// Extract `cid` from any `user_msg` string (field #132760, len-delimited). Returns None if not present.
-#[inline]
-fn fast_extract_cid(payload: &Bytes) -> Option<u64> {
-    const USER_MSG: u64 = 132_760;
-    let buf = payload.as_ref();
-    let mut i = 0usize;
-    while i < buf.len() {
-        let (key, klen) = read_varint(buf, i)?; i += klen;
-        let field = key >> 3; let wt = (key & 7) as u8;
-        match wt {
-            0 => { let (_, n) = read_varint(buf, i)?; i += n; },
-            1 => { i += 8; },
-            2 => {
-                let (l, n) = read_varint(buf, i)?; i += n;
-                if field == USER_MSG {
-                    let s = &buf[i..i + (l as usize)];
-                    // Look for ascii "cid=" and parse following digits
-                    if let Some(pos) = memchr::memmem::find(s, b"cid=") {
-                        let mut j = pos + 4; // after "cid="
-                        let mut val: u64 = 0;
-                        let mut seen = false;
-                        while j < s.len() {
-                            let c = s[j];
-                            if (b'0'..=b'9').contains(&c) {
-                                val = val * 10 + (c - b'0') as u64; seen = true; j += 1;
-                            } else { break; }
-                        }
-                        if seen { return Some(val); }
-                    }
-                }
-                i += l as usize;
-            },
-            5 => { i += 4; },
-            _ => return None,
-        }
-    }
-    None
-}
-/// Attempt to read template_id quickly without full decode.
-/// We handle common cases:
-///   - field #11 (many RTI messages)
-///   - field #154_467 (some repository/product messages)
-/// Both are `varint` wire type. We fall back to the slower `extract_template_id` if not found.
-#[inline]
-fn fast_extract_template_id(payload: &bytes::Bytes) -> Option<i32> {
-    const TID_A: u64 = 11;
-    const TID_B: u64 = 154_467;
-
-    let buf = payload.as_ref();
-    let mut i = 0usize;
-
-    while i < buf.len() {
-        let (key, klen) = read_varint(buf, i)?; i += klen;
-        let field = key >> 3;
-        let wt = (key & 7) as u8;
-
-        if wt == 0 && (field == TID_A || field == TID_B) {
-            let (val, _n) = read_varint(buf, i)?; // we don't need to advance after returning
-            return i32::try_from(val).ok();
-        }
-
-        match wt {
-            0 => { let (_, n) = read_varint(buf, i)?; i += n; }
-            1 => { i += 8; }
-            2 => { let (l, n) = read_varint(buf, i)?; i += n + l as usize; }
-            5 => { i += 4; }
-            _ => return None,
-        }
-    }
-    None
-}

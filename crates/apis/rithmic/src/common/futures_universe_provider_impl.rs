@@ -8,7 +8,7 @@ use prost::Message;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
 use tracing::{error, info, warn};
-use crate::websocket::api_base::RithmicApiClient;
+use crate::websocket::client::RithmicApiClient;
 use standard_lib::engine_core::api_traits::FuturesUniverseProvider;
 use standard_lib::securities::futures_helpers;
 use standard_lib::securities::security::PricingSpecs;

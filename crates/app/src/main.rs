@@ -1,7 +1,7 @@
 use std::env;
 use std::sync::Arc;
-use rithmic::websocket::api_base::RithmicApiClient;
-use rithmic::websocket::server_models::{RithmicCredentials, RithmicServer, RithmicSystem};
+use rithmic::common::models::{RithmicCredentials, RithmicServer, RithmicSystem};
+use rithmic::websocket::client::RithmicApiClient;
 use standard_lib::engine_core::event_hub::EventHub;
 use standard_lib::engine_core::strategy_manager::StrategyManager;
 use tick_trade::user_strategies::data_feed_strategy::DataSubscriptionExampleStrategy;

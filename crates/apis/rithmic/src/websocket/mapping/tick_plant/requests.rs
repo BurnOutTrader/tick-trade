@@ -1,5 +1,5 @@
 use crate::websocket::rithmic_proto_objects::rti::{request_market_data_update, RequestAuxilliaryReferenceData, RequestDepthByOrderSnapshot, RequestDepthByOrderUpdates, RequestFrontMonthContract, RequestGetVolumeAtPrice, RequestProductCodes};
-use crate::websocket::api_base::{ActiveSub, RithmicApiClient, SubType};
+use crate::websocket::client::RithmicApiClient;
 use crate::websocket::errors::RithmicApiError;
 use crate::websocket::rithmic_proto_objects::rti::{RequestGetInstrumentByUnderlying, RequestGiveTickSizeTypeTable, RequestMarketDataUpdate, RequestMarketDataUpdateByUnderlying, RequestSearchSymbols};
 use crate::websocket::rithmic_proto_objects::rti::request_login::SysInfraType;
@@ -9,6 +9,7 @@ use crate::websocket::rithmic_proto_objects::rti::request_market_data_update::Up
 use std::sync::Arc;
 use bytes::Bytes;
 use smallvec::SmallVec;
+use crate::websocket::models::{ActiveSub, SubType};
 
 const PLANT: SysInfraType = SysInfraType::TickerPlant;
 

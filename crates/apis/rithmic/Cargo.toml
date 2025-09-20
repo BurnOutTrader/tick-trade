@@ -31,3 +31,4 @@ ahash = {workspace = true}
 memchr = "2.7.5"
 concurrent-queue = { workspace = true }
 uuid = { workspace = true }
+zeroize = {workspace = true, features = ["derive"] }

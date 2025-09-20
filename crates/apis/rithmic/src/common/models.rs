@@ -1,12 +1,8 @@
-#![allow(dead_code)]
-
-use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
-use lazy_static::lazy_static;
 use strum_macros::Display;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
-
-#[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Debug, Hash, PartialOrd, Ord, Display)]
+#[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Debug, Hash, PartialOrd, Ord, Display, Zeroize)]
 pub enum RithmicServer {
     Chicago,
     Sydney,
@@ -23,7 +19,7 @@ pub enum RithmicServer {
     Test
 }
 
-#[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Debug, Hash, PartialOrd, Ord, Display, Copy)]
+#[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Debug, Hash, PartialOrd, Ord, Display, Copy, Zeroize)]
 pub enum RithmicSystem {
     #[strum(serialize = "Rithmic 04 Colo")]
     Rithmic04Colo,
@@ -59,32 +55,16 @@ pub enum RithmicSystem {
     Test
 }
 
-lazy_static! {
-    pub(crate) static ref RITHMIC_SERVERS: BTreeMap<RithmicServer, String> = {
-        BTreeMap::from([
-            (RithmicServer::Chicago, "wss://rprotocol.rithmic.com:443".to_string()),
-            (RithmicServer::Sydney, "wss://rprotocol-au.rithmic.com:443".to_string()),
-            (RithmicServer::SaoPaolo, "wss://rprotocol-br.rithmic.com:443".to_string()),
-            (RithmicServer::Colo75, "wss://protocol-colo75.rithmic.com:443".to_string()),
-            (RithmicServer::Frankfurt, "wss://rprotocol-de.rithmic.com:443".to_string()),
-            (RithmicServer::HongKong, "wss://rprotocol-hk.rithmic.com:443".to_string()),
-            (RithmicServer::Ireland, "wss://rprotocol-ie.rithmic.com:443".to_string()),
-            (RithmicServer::Mumbai, "wss://rprotocol-in.rithmic.com:443".to_string()),
-            (RithmicServer::Seoul, "wss://rprotocol-kr.rithmic.com:443".to_string()),
-            (RithmicServer::CapeTown, "wss://rprotocol-za.rithmic.com:443".to_string()),
-            (RithmicServer::Tokyo, "wss://rprotocol-jp.rithmic.com:443".to_string()),
-            (RithmicServer::Singapore, "wss://rprotocol-sg.rithmic.com:443".to_string()),
-            (RithmicServer::Test, "wss://rituz00100.rithmic.com:443".to_string()),
-        ])
-    };
-}
-
+#[derive(Deserialize, ZeroizeOnDrop, Zeroize)]
 pub struct RithmicCredentials {
+    #[zeroize(skip)]
     pub(crate) user: String,
     pub(crate) server_name: RithmicServer,
     pub(crate) system_name: RithmicSystem,
+    #[zeroize(skip)]
     pub(crate) app_name: String,
     pub(crate) app_version: String,
+    #[zeroize(skip)]
     pub(crate) password: String,
     pub(crate) fcm_id: Option<String>,
     pub(crate) ib_id: Option<String>,

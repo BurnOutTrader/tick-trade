@@ -1,10 +1,9 @@
 use std::env;
 use std::sync::Arc;
 use standard_lib::engine_core::event_hub::EventHub;
-use crate::websocket::api_base::RithmicApiClient;
+use crate::common::models::{RithmicCredentials, RithmicServer, RithmicSystem};
+use crate::websocket::client::RithmicApiClient;
 use crate::websocket::errors::RithmicApiError;
-use crate::websocket::server_models::{RithmicCredentials, RithmicServer, RithmicSystem};
-
 #[allow(dead_code)]
 async fn await_buffers_drained(
     client: &Arc<RithmicApiClient>,

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use bytes::Bytes;
 use smallvec::SmallVec;
-use crate::websocket::api_base::RithmicApiClient;
+use crate::websocket::client::RithmicApiClient;
 use crate::websocket::errors::RithmicApiError;
 use crate::websocket::rithmic_proto_objects::rti::request_login::SysInfraType;
 use crate::websocket::rithmic_proto_objects::rti::{RequestReferenceData, RequestRithmicSystemGatewayInfo, RequestRithmicSystemInfo};

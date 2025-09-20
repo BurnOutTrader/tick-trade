@@ -13,7 +13,7 @@ use tracing::error;
 use standard_lib::market_data::base_data::{Candle, Resolution};
 use standard_lib::securities::market_hours::candle_end;
 use standard_lib::securities::symbols::Exchange;
-use crate::websocket::api_base::RithmicApiClient;
+use crate::websocket::client::RithmicApiClient;
 use crate::websocket::rithmic_proto_objects::rti::time_bar::BarType;
 
 #[allow(dead_code, unused)]

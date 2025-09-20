@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use bytes::Bytes;
-use crate::websocket::api_base::RithmicApiClient;
+use crate::websocket::client::RithmicApiClient;
 use crate::websocket::errors::RithmicApiError;
 
 #[allow(dead_code)]
