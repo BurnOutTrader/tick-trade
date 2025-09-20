@@ -619,6 +619,7 @@ dependencies = [
  "anyhow",
  "arrayvec",
  "arrow",
+ "async-trait",
  "chrono",
  "chrono-tz",
  "duckdb",

@@ -162,6 +162,7 @@ impl<'a, T: TimeKey> KMerge<'a, T> {
 
     /// Convenience: turn into an iterator.
     #[inline]
+    #[allow(unused)]
     pub fn into_iter(self) -> KMergeIter<'a, T> {
         KMergeIter { inner: self }
     }
