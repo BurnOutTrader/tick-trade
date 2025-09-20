@@ -20,3 +20,4 @@ parking_lot = { workspace = true }
 ahash = {workspace = true}
 lazy_static = "1.5.0"
 uuid = { workspace = true }
+thiserror = "2.0.16"

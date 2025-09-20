@@ -617,6 +617,7 @@ version = "0.1.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
+ "arrayvec",
  "arrow",
  "chrono",
  "chrono-tz",
@@ -631,6 +632,7 @@ dependencies = [
  "strum_macros",
  "tempfile",
  "thiserror",
+ "tokio",
  "uuid",
  "walkdir",
 ]
@@ -1974,6 +1976,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "strum_macros",
+ "thiserror",
  "tokio",
  "tracing",
  "uuid",

@@ -8,6 +8,8 @@ pub mod paths;
 pub mod append;
 pub mod ingest;
 pub mod duck_queries;
+mod merge;
+mod replay;
 // ⬇️ declare the file so the module exists
 
 

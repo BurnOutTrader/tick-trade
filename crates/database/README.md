@@ -109,3 +109,105 @@ println!("{} {} {} bids:{} asks:{}",
 - **Precision:** We keep `time` as ns internally (DuckDB stores TIMESTAMP_NS), and we serialize decimals as strings inside JSON (no float round-off).
 
 
+
+## Replay
+```rust
+use chrono::{Utc, TimeZone};
+use database::queries::{
+    get_ticks_in_range, get_candles_in_range, get_books_in_range, /* etc */
+};
+use replay::historical_feed::{HistoricalFeed, HistoricalReceivers};
+
+struct MySinks;
+impl HistoricalReceivers for MySinks {
+    fn on_ticks(&mut self, ts: chrono::DateTime<Utc>, batch: &[Tick]) {
+        // fan-out to your tick receivers
+        // e.g., event_hub.publish_ticks(ts, batch)
+    }
+    fn on_candles(&mut self, ts: chrono::DateTime<Utc>, batch: &[Candle]) {
+        // fan-out to bar receivers
+    }
+    fn on_bbo(&mut self, ts: chrono::DateTime<Utc>, batch: &[Bbo]) {
+        // ...
+    }
+    fn on_books(&mut self, ts: chrono::DateTime<Utc>, batch: &[OrderBook]) {
+        // ...
+    }
+}
+
+fn run_replay(conn: &duckdb::Connection) -> anyhow::Result<()> {
+    let provider = "databento";
+    let symbol   = "MNQ";
+    let res      = standard_lib::market_data::base_data::Resolution::Seconds(1);
+
+    let start = Utc.with_ymd_and_hms(2024, 9, 12, 13, 30, 0).unwrap();
+    let end   = Utc.with_ymd_and_hms(2024, 9, 12, 20, 0, 0).unwrap();
+
+    // Pull historical data (already time-sorted by our queries).
+    let ticks   = get_ticks_in_range(conn, provider, symbol, start, end)?;
+    let candles = get_candles_in_range(conn, provider, symbol, res, start, end)?;
+    let books   = get_books_in_range(conn, provider, symbol, start, end, Some(10))?;
+    let bbo     = Vec::new(); // if you fetch BBO, plug it in
+
+    // Build the stepper (skip sorting because queries already ORDER BY time).
+    let mut feed = HistoricalFeed::new(ticks, candles, bbo, books, /*ensure_sort=*/ false);
+
+    let mut sinks = MySinks;
+    while feed.step(&mut sinks) {
+        // do pacing here if you want (e.g., sleep for realtime replay speed)
+    }
+    Ok(())
+}
+```
+
+
+
+## Replay (Backtest)
+How you use it
+- You do not “install a DB server”. DuckDB/Parquet are file-backed; your read fns already operate with a duckdb::Connection.
+- For each (provider, symbol, kind) you want to replay, prefetch with your query helpers, build a SymbolKindReplayer, register with the ReplayCoordinator, and run. The coordinator guarantees global time order and same-timestamp coalescing across all sources.
+
+Example wiring (in your historical engine):
+```rust
+use chrono::{Utc, TimeZone, DateTime};
+use std::time::Duration;
+use duckdb::Connection;
+
+pub async fn run_historical_example(conn: &Connection, hub: EventHub) -> anyhow::Result<()> {
+    let provider = "Rithmic";
+    let symbol   = "MNQ";
+    let exch     = Exchange::CME;
+
+    let start: DateTime<Utc> = Utc.with_ymd_and_hms(2024, 12, 2, 0, 0, 0).unwrap();
+    let end:   DateTime<Utc> = Utc.with_ymd_and_hms(2024, 12, 2, 23, 59, 59).unwrap();
+
+    // Prefetch your datasets (these preserve ns and are time-sorted in the replayer)
+    let ticks   = crate::queries::get_ticks_in_range(conn, provider, symbol, start, end)?;
+    let candles = crate::queries::get_candles_in_range(conn, provider, symbol, Resolution::Seconds(1), start, end)?;
+    let books   = crate::queries::get_books_in_range(conn, provider, symbol, start, end, Some(10))?;
+
+    // Build sources
+    let tick_src   = SymbolKindReplayer::new_ticks(format!("{provider} {symbol} Ticks"), ticks);
+    let cndl_src   = SymbolKindReplayer::new_candles(format!("{provider} {symbol} Candles(1s)"), candles);
+    let book_src   = SymbolKindReplayer::new_books(format!("{provider} {symbol} Books"), books);
+
+    // Coordinate and run (optional pacing to avoid firehose; omit for max speed)
+    let mut coord = ReplayCoordinator::new();
+    coord.add_source(tick_src);
+    coord.add_source(cndl_src);
+    coord.add_source(book_src);
+
+    coord.run(hub.clone(), Some(Duration::from_millis(0))).await?;
+    Ok(())
+}
+```
+
+Why this solves your concerns
+- Different channels per provider/symbol/type: each SymbolKindReplayer is exactly one such channel. You can add as many as you want.
+- Synchronize historical: the ReplayCoordinator uses a global min-heap on peek_ts() to emit all sources that have the next timestamp, together, every step.
+- Same-timestamp fan-out: inside each replayer we drain “all rows with the same ts” into a batch and publish once, so consolidators/broadcasters see a coherent snapshot for that instant.
+- Candles keyed on time_end: implemented in peek_ts() and the drain for candles.
+- No clones in hot path: we operate on VecDeque and move items out.
+- Works for live mode too: the same pattern applies; swap “prefetch” with streaming inputs that append to the deques.
+
+
