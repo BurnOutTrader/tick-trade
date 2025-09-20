@@ -1,8 +1,7 @@
 use anyhow::{Context, Result};
-use chrono::{NaiveDate};
+use chrono::NaiveDate;
 use duckdb::Connection;
 use std::path::Path;
-
 use super::paths::{Layout, Partitioning};
 use super::append::append_merge_parquet;
 

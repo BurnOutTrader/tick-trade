@@ -1,14 +1,15 @@
 use std::str::FromStr;
 use ahash::AHashMap;
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use chrono::{DateTime, Utc};
-use duckdb::{params, Connection};
+use duckdb::{params, Connection, OptionalExt};
 use rust_decimal::Decimal;
-use standard_lib::market_data::base_data::{Candle, Resolution, Side, Tick};
+use standard_lib::market_data::base_data::{Candle, OrderBook, Resolution, Side, Tick};
 use standard_lib::securities::symbols::Exchange;
 use crate::duck::{latest_available, resolve_dataset_id};
 use crate::layout::Layout;
 use crate::models::{DataKind, SeqBound};
+use serde_json::Value as JsonValue;
 
 /// Return earliest timestamp available for a single (provider, kind, symbol, exchange, res).
 /// Uses partition pruning + Parquet stats; reads no payloads when min/max suffice.
@@ -407,3 +408,243 @@ pub fn get_candles_from_date_to_latest(
     get_candles_in_range(conn, provider, symbol, resolution, start, latest_ts)
 }
 
+/// Get order-book snapshots for [start, end) using DuckDB over the *overlapping* parquet partitions.
+/// Ladders (bids/asks) are stored as JSON text for robustness; we parse in Rust.
+///
+/// Optional `depth`: truncate ladders to top-N after parsing.
+pub fn get_books_in_range(
+    conn: &Connection,
+    provider: &str,
+    symbol: &str,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+    depth: Option<usize>,
+) -> anyhow::Result<Vec<OrderBook>> {
+    if start >= end {
+        return Ok(Vec::new());
+    }
+
+    let Some(dataset_id) =
+        resolve_dataset_id(conn, provider, symbol, DataKind::Book, None)?
+    else {
+        return Ok(Vec::new());
+    };
+
+    let paths = partition_paths_for_range(conn, dataset_id, start, end)?;
+    if paths.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let src = build_read_parquet_list(&paths)?;
+    // Project minimal columns, push down time predicate
+    let sql = format!(
+        r#"
+        select
+            symbol,
+            exchange,
+            epoch_ns(time) as t_ns,
+            bids_json,
+            asks_json
+        from {src}
+        where symbol = ?
+          and time >= to_timestamp(?)
+          and time <  to_timestamp(?)
+        order by t_ns asc
+        "#,
+        src = src
+    );
+
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query(params![symbol, start.to_rfc3339(), end.to_rfc3339()])?;
+
+    let mut out = Vec::new();
+    while let Some(r) = rows.next()? {
+        let sym: String = r.get(0)?;
+        let exch_str: String = r.get(1)?;
+        let t_ns: i64 = r.get(2)?;
+        let bids_txt: String = r.get(3)?;
+        let asks_txt: String = r.get(4)?;
+
+        let exchange = Exchange::from_str(&exch_str)
+            .ok_or_else(|| anyhow!("unknown exchange '{}' in parquet", exch_str))?;
+
+        let mut bids = parse_ladder_json(&bids_txt)?;
+        let mut asks = parse_ladder_json(&asks_txt)?;
+
+        if let Some(d) = depth {
+            if bids.len() > d { bids.truncate(d); }
+            if asks.len() > d { asks.truncate(d); }
+        }
+
+        out.push(OrderBook {
+            symbol: sym,
+            exchange,
+            bids,
+            asks,
+            time: epoch_ns_to_dt(t_ns),
+        });
+    }
+
+    Ok(out)
+}
+
+/// Convenience: latest snapshot at/after `hint` (or globally latest if `hint` is None).
+pub fn get_latest_book(
+    conn: &Connection,
+    provider: &str,
+    symbol: &str,
+    hint_from: Option<DateTime<Utc>>,
+    depth: Option<usize>,
+) -> anyhow::Result<Option<OrderBook>> {
+    let Some(dataset_id) =
+        resolve_dataset_id(conn, provider, symbol, DataKind::Book, None)?
+    else {
+        return Ok(None);
+    };
+
+    // Use catalog to find newest partition; fall back to SQL max(time)
+    let (start, end) = if let Some(h) = hint_from {
+        (h, DateTime::<Utc>::MAX_UTC)
+    } else {
+        (DateTime::<Utc>::MIN_UTC, DateTime::<Utc>::MAX_UTC)
+    };
+
+    let paths = partition_paths_for_range(conn, dataset_id, start, end)?;
+    if paths.is_empty() {
+        return Ok(None);
+    }
+
+    let src = build_read_parquet_list(&paths)?;
+    let sql = format!(
+        r#"
+        select
+            symbol, exchange, epoch_ns(time) as t_ns, bids_json, asks_json
+        from {src}
+        where symbol = ?
+        order by t_ns desc
+        limit 1
+        "#,
+        src = src
+    );
+
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query(params![symbol])?;
+
+    if let Some(r) = rows.next()? {
+        let sym: String = r.get(0)?;
+        let exch_str: String = r.get(1)?;
+        let t_ns: i64 = r.get(2)?;
+        let bids_txt: String = r.get(3)?;
+        let asks_txt: String = r.get(4)?;
+
+        let exchange = Exchange::from_str(&exch_str)
+            .ok_or_else(|| anyhow!("unknown exchange '{}' in parquet", exch_str))?;
+
+        let mut bids = parse_ladder_json(&bids_txt)?;
+        let mut asks = parse_ladder_json(&asks_txt)?;
+        if let Some(d) = depth {
+            if bids.len() > d { bids.truncate(d); }
+            if asks.len() > d { asks.truncate(d); }
+        }
+
+        return Ok(Some(OrderBook {
+            symbol: sym,
+            exchange,
+            bids,
+            asks,
+            time: epoch_ns_to_dt(t_ns),
+        }));
+    }
+
+    Ok(None)
+}
+
+/// Earliest available order-book snapshot (ts only).
+pub fn earliest_book_available(
+    conn: &duckdb::Connection,
+    provider: &str,
+    symbol: &str,
+) -> anyhow::Result<Option<DateTime<Utc>>> {
+    // If your generic earliest_available(kind) already exists, you can just:
+    // return earliest_available(conn, provider, symbol, DataKind::Book, None).map(|o| o.map(|b| b.ts));
+
+    let Some(dataset_id) = resolve_dataset_id(conn, provider, symbol, DataKind::Book, None)? else {
+        return Ok(None);
+    };
+
+    let mut q = conn.prepare(
+        "select min(min_ts) as ts
+           from partitions
+          where dataset_id = ?"
+    )?;
+    let ts_str: Option<String> = q.query_row(duckdb::params![dataset_id], |r| r.get(0)).optional()?;
+    let ts = match ts_str {
+        Some(s) => Some(DateTime::parse_from_rfc3339(&s)?.with_timezone(&Utc)),
+        None => None,
+    };
+    Ok(ts)
+}
+
+/// Latest available order-book snapshot (ts only).
+pub fn latest_book_available(
+    conn: &duckdb::Connection,
+    provider: &str,
+    symbol: &str,
+) -> anyhow::Result<Option<DateTime<Utc>>> {
+    // If your generic latest_available(kind) already exists, you can just:
+    // return latest_available(conn, provider, symbol, DataKind::Book, None).map(|o| o.map(|b| b.ts));
+
+    let Some(dataset_id) = resolve_dataset_id(conn, provider, symbol, DataKind::Book, None)? else {
+        return Ok(None);
+    };
+
+    let mut q = conn.prepare(
+        "select max(max_ts) as ts
+           from partitions
+          where dataset_id = ?"
+    )?;
+    let ts_str: Option<String> = q.query_row(duckdb::params![dataset_id], |r| r.get(0)).optional()?;
+    let ts = match ts_str {
+        Some(s) => Some(DateTime::parse_from_rfc3339(&s)?.with_timezone(&Utc)),
+        None => None,
+    };
+    Ok(ts)
+}
+
+/// Parse a compact JSON [[price, size], ...] into Vec<(Decimal, Decimal)>.
+/// Accepts each cell as either a JSON string or number.
+/// Example payload: `[[ "5043.25","7"], [5043.50, 3.5], [1e-6, "2.0"]]`
+fn parse_ladder_json(txt: &str) -> anyhow::Result<Vec<(Decimal, Decimal)>> {
+    let v: JsonValue = serde_json::from_str(txt)
+        .with_context(|| "failed to parse ladder JSON")?;
+    let arr = v.as_array().ok_or_else(|| anyhow!("ladder json not array"))?;
+
+    fn dec_from_json(x: &JsonValue, what: &str) -> anyhow::Result<Decimal> {
+        match x {
+            JsonValue::String(s) => {
+                // Prefer exact if you guarantee canonical strings; fall back to FromStr for flexibility.
+                Decimal::from_str_exact(s).or_else(|_| Decimal::from_str(s))
+                    .with_context(|| format!("invalid decimal string for {what}: {s}"))
+            }
+            JsonValue::Number(n) => {
+                // Convert the original number to string (preserves exponent form) and parse Decimal.
+                let s = n.to_string();
+                Decimal::from_str(&s)
+                    .with_context(|| format!("invalid decimal number for {what}: {s}"))
+            }
+            _ => Err(anyhow!("{} must be string or number", what)),
+        }
+    }
+
+    let mut out = Vec::with_capacity(arr.len());
+    for (i, item) in arr.iter().enumerate() {
+        let pair = item.as_array().ok_or_else(|| anyhow!("ladder row {i} not array"))?;
+        if pair.len() != 2 {
+            return Err(anyhow!("ladder row {i} length != 2"));
+        }
+        let px = dec_from_json(&pair[0], "price")?;
+        let sz = dec_from_json(&pair[1], "size")?;
+        out.push((px, sz));
+    }
+    Ok(out)
+}

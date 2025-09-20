@@ -11,7 +11,7 @@ pub enum DataKind {
     /// Aggregated bars/candles. Daily=per year, Weekly=one file, intraday=per day.
     Candle,
 
-    BookL2
+    Book
 }
 
 // ---------- Disambiguation key for same-timestamp events ----------

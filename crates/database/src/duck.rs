@@ -155,7 +155,7 @@ pub fn upsert_dataset(
         DataKind::Tick => "tick",
         DataKind::Bbo => "quote",
         DataKind::Candle => "candle",
-        DataKind::BookL2 => "orderbook",
+        DataKind::Book => "orderbook",
     };
     let res_key = resolution.and_then(|r| r.as_key());
 
@@ -290,7 +290,7 @@ pub fn resolve_dataset_id(
         DataKind::Tick => "tick",
         DataKind::Bbo => "quote",
         DataKind::Candle => "candle",
-        DataKind::BookL2 => "orderbook",
+        DataKind::Book => "orderbook",
     };
     let res_key = resolution.and_then(|r| r.as_key());
 

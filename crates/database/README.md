@@ -65,3 +65,47 @@ let candles: Vec<Candle> = get_candles_in_range("AAPL", start_timestamp, end_tim
 let earliest: Option<DateTime<Utc>> = earliest_available("AAPL")?;
 let latest: Option<DateTime<Utc>> = latest_available("AAPL")?;
 ```
+
+### Order Book (L2) storage & retrieval
+
+We persist order-book snapshots in daily parquet partitions, one **new** part-file per ingest (never overwrite). Columns:
+
+- `symbol TEXT`
+- `exchange TEXT`
+- `time TIMESTAMP` (UTC; written as RFC3339 → DuckDB stores ns precision)
+- `bids_json TEXT` – JSON `[[price, size], ...]` with `Decimal` preserved as strings
+- `asks_json TEXT` – same
+
+> We purposely keep ladders as JSON in parquet for robustness and max compression via ZSTD. DuckDB still pushes down `WHERE symbol AND time` on scan; we parse JSON at the edges.
+
+**Write:**
+```rust
+let day = Utc::now().date_naive(); // partition key
+let out_file = write_orderbooks_partition(
+    &conn,
+    "databento",
+    "MNQ",
+    Exchange::CME,
+    day,
+    &snapshots,          // Vec<OrderBook>
+    std::path::Path::new("./data"),
+)?;
+println!("book parquet written: {}", out_file.display());
+
+let start = "2025-01-24T14:30:00Z".parse()?;
+let end   = "2025-01-24T14:31:00Z".parse()?;
+let books = get_books_in_range(&conn, "databento", "MNQ", start, end, Some(10))?;
+for ob in books {
+println!("{} {} {} bids:{} asks:{}",
+         ob.time, ob.exchange, ob.symbol, ob.bids.len(), ob.asks.len());
+}
+```
+
+## Notes / rationale
+
+- **No overwrite on partial-day updates:** each ingest writes a **new** parquet “part” and `upsert_partition` registers it. Readers use `read_parquet([list_of_parts])`, so you never lose the first 50% of a day.
+- **Max compression:** ZSTD + JSON ladders compress extremely well (repeated structure, small strings). If you later want fully typed Arrow `LIST<STRUCT<price,size>>`, we can add a parallel writer; the read APIs won’t change.
+- **Cross-tooling:** Because it’s plain Parquet + TEXT columns, Polars/Pandas/Spark can also scan & filter by `symbol`/`time`. They can parse `bids_json/asks_json` if they need ladders.
+- **Precision:** We keep `time` as ns internally (DuckDB stores TIMESTAMP_NS), and we serialize decimals as strings inside JSON (no float round-off).
+
+
