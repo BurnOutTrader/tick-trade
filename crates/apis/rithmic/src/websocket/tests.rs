@@ -1,20 +1,20 @@
 use std::env;
 use std::sync::Arc;
 use standard_lib::engine_core::event_hub::EventHub;
-use crate::client::api_base::RithmicApiClient;
-use crate::client::errors::RithmicApiError;
-use crate::client::server_models::{RithmicCredentials, RithmicServer, RithmicSystem};
+use crate::websocket::api_base::RithmicApiClient;
+use crate::websocket::errors::RithmicApiError;
+use crate::websocket::server_models::{RithmicCredentials, RithmicServer, RithmicSystem};
 
 #[allow(dead_code)]
 async fn await_buffers_drained(
     client: &Arc<RithmicApiClient>,
-    plant: crate::client::rithmic_proto_objects::rti::request_login::SysInfraType,
+    plant: crate::websocket::rithmic_proto_objects::rti::request_login::SysInfraType,
     max_ms: u64,
 ) {
     use tokio::time::{sleep, Duration};
     use std::time::Instant;
 
-    fn counts(client: &Arc<RithmicApiClient>, plant: crate::client::rithmic_proto_objects::rti::request_login::SysInfraType) -> (usize, usize) {
+    fn counts(client: &Arc<RithmicApiClient>, plant: crate::websocket::rithmic_proto_objects::rti::request_login::SysInfraType) -> (usize, usize) {
         let pending = client
             .pending
             .iter()
@@ -97,11 +97,11 @@ fn test_client() -> Result<Arc<RithmicApiClient>, RithmicApiError> {
 #[tokio::test]
 #[ignore] // don't run on `cargo test` unless explicitly requested
 async fn test_live_rithmic_connection() {
-    use crate::client::rithmic_proto_objects::rti::request_login::SysInfraType;
+    use crate::websocket::rithmic_proto_objects::rti::request_login::SysInfraType;
     use std::time::Duration;
     use dotenvy::dotenv;
     use tokio::time::sleep;
-    use crate::client::rithmic_proto_objects::rti::RequestTradeRoutes;
+    use crate::websocket::rithmic_proto_objects::rti::RequestTradeRoutes;
     dotenv().ok(); // load from .env if available
 
     let client = test_client().unwrap();
@@ -142,8 +142,8 @@ async fn test_live_rithmic_connection() {
 #[tokio::test]
 #[ignore] // don't run on `cargo test` unless explicitly requested
 async fn test_live_rithmic_reconnection() {
-    use crate::client::rithmic_proto_objects::rti::request_login::SysInfraType;
-    use crate::client::rithmic_proto_objects::rti::RequestTradeRoutes;
+    use crate::websocket::rithmic_proto_objects::rti::request_login::SysInfraType;
+    use crate::websocket::rithmic_proto_objects::rti::RequestTradeRoutes;
     use dotenvy::dotenv;
 
     dotenv().ok(); // load from .env if available
@@ -177,8 +177,8 @@ async fn test_live_rithmic_reconnection() {
 #[tokio::test]
 #[ignore] // don't run on `cargo test` unless explicitly requested
 async fn test_live_rithmic_callbacks() {
-    use crate::client::rithmic_proto_objects::rti::request_login::SysInfraType;
-    use crate::client::rithmic_proto_objects::rti::ResponseReferenceData;
+    use crate::websocket::rithmic_proto_objects::rti::request_login::SysInfraType;
+    use crate::websocket::rithmic_proto_objects::rti::ResponseReferenceData;
     use prost::Message;
     use dotenvy::dotenv;
 

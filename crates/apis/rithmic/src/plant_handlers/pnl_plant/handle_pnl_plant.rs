@@ -124,7 +124,7 @@ pub async fn match_pnl_plant_id(
                             Some(closed_position_pnl) => {
                                 match Decimal::from_str(&closed_position_pnl) {
                                     Ok(closed_position_pnl) => {
-                                        //client.closed_pnl.insert(symbol_code.clone(), closed_position_pnl);
+                                        //websocket.closed_pnl.insert(symbol_code.clone(), closed_position_pnl);
                                     },
                                     Err(_) => {}
                                 }
@@ -155,7 +155,7 @@ pub async fn match_pnl_plant_id(
                 let (side, quantity) = update_position(account_id.clone(), &symbol_code, msg.buy_qty, msg.sell_qty);
 
                 if let Some(symbol_name) = msg.product_code {
-                    // fwd position updates to the client
+                    // fwd position updates to the websocket
                     if let (Some(pnl), Some(average_price)) = (msg.open_position_pnl.clone(), msg.avg_open_fill_price) {
                         //todo do this with a simple message, quantity open, and position side, symbol name, symbol code
                         let open_position_pnl = match f64::from_str(&pnl) {
@@ -225,7 +225,7 @@ pub async fn match_pnl_plant_id(
                     Some(account_balance) => {
                         match Decimal::from_str(&account_balance) {
                             Ok(account_balance) => {
-                                //client.account_balance.insert(id.clone(), account_balance); //make a fn to update the ledger balance in Ledger and LedgerService
+                                //websocket.account_balance.insert(id.clone(), account_balance); //make a fn to update the ledger balance in Ledger and LedgerService
                                 account_balance
                             },
                             Err(_) => return
@@ -238,7 +238,7 @@ pub async fn match_pnl_plant_id(
                     Some(cash_on_hand) => {
                         match Decimal::from_str(&cash_on_hand) {
                             Ok(cash_on_hand) => {
-                               // client.account_cash_available.insert(id.clone(), cash_on_hand);
+                               // websocket.account_cash_available.insert(id.clone(), cash_on_hand);
                             },
                             Err(_) => {}
                         }
@@ -250,7 +250,7 @@ pub async fn match_pnl_plant_id(
                     Some(open_pnl) => {
                         match Decimal::from_str(&open_pnl) {
                             Ok(open_pnl) => {
-                                //client.open_pnl.insert(id.clone(), open_pnl);
+                                //websocket.open_pnl.insert(id.clone(), open_pnl);
                             },
                             Err(_) => {}
                         }
@@ -262,7 +262,7 @@ pub async fn match_pnl_plant_id(
                     Some(closed_position_pnl) => {
                         match Decimal::from_str(&closed_position_pnl) {
                             Ok(closed_position_pnl) => {
-                                // client.closed_pnl.insert(id.clone(), closed_position_pnl);
+                                // websocket.closed_pnl.insert(id.clone(), closed_position_pnl);
                             },
                             Err(_) => {}
                         }

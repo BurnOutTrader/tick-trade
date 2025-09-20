@@ -16,9 +16,9 @@ use standard_lib::engine_core::provider_resolver::{ProviderResolver, SecurityRes
 use standard_lib::market_data::base_data::{Candle, Resolution};
 use standard_lib::securities::market_hours::{candle_end, hours_for_exchange, next_session_open_after};
 use standard_lib::securities::symbols::Exchange;
-use crate::client::api_base::RithmicApiClient;
-use crate::client::rithmic_proto_objects::rti::{OrderBook, ResponseTimeBarReplay};
-use crate::client::rithmic_proto_objects::rti::request_login::SysInfraType;
+use crate::websocket::api_base::RithmicApiClient;
+use crate::websocket::rithmic_proto_objects::rti::{OrderBook, ResponseTimeBarReplay};
+use crate::websocket::rithmic_proto_objects::rti::request_login::SysInfraType;
 #[derive(Clone, Debug)]
 pub enum HistFeed {
     Ticks,
@@ -88,7 +88,7 @@ impl HistoricalDataProvider for RithmicApiClient {
             if *ready { return Ok(()); }
         }
         // History plant is where bulk downloads come from. Ticker plant is
-        // kept up so the same client can also do live if needed.
+        // kept up so the same websocket can also do live if needed.
         self.connect_and_login(SysInfraType::HistoryPlant).await?;
         self.connect_and_login(SysInfraType::TickerPlant).await?;
         Ok(())

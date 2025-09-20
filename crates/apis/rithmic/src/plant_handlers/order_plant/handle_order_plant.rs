@@ -606,7 +606,7 @@ pub async fn match_order_plant_id(
             // From Server
             /*
             Rithmic Order Notification (Template ID: 351) from Server: RithmicOrderNotification { template_id: 351, user_tag: None, notify_type: Some(OrderRcvdFromClnt),
-            is_snapshot: None, status: Some("Order received from client"), basket_id: Some("233651480"), original_basket_id: None, linked_basket_ids: None,
+            is_snapshot: None, status: Some("Order received from websocket"), basket_id: Some("233651480"), original_basket_id: None, linked_basket_ids: None,
             fcm_id: Some("TopstepTrader"), ib_id: Some("TopstepTrader"), user_id: Some("kevtaz"), account_id: Some("S1Sep246906077"), symbol: Some("M6AZ4"),
             exchange: Some("CME"), trade_exchange: Some("CME"), trade_route: Some("simulator"), exchange_order_id: None, instrument_type: None,
             completion_reason: None, quantity: Some(2), quan_release_pending: None, price: None, trigger_price: None, transaction_type: Some(Sell),
@@ -638,7 +638,7 @@ pub async fn match_order_plant_id(
                         NotifyType::Open => {
                             //todo, we dont need to do this here
                         /*    let event = OrderUpdateEvent::OrderAccepted {
-                                brokerage: client.brokerage.clone(),
+                                brokerage: websocket.brokerage.clone(),
                                 account_id: AccountId::from(account_id),
                                 order_id: order_id.clone(),
                                 tag,
@@ -658,7 +658,7 @@ pub async fn match_order_plant_id(
                                         Some(q) => q
                                     };
                                     let event = OrderUpdateEvent::OrderFilled {
-                                        brokerage: client.brokerage.clone(),
+                                        brokerage: websocket.brokerage.clone(),
                                         account_id: AccountId::from(account_id),
                                         order_id: order_id.clone(),
                                         price,
@@ -674,7 +674,7 @@ pub async fn match_order_plant_id(
                             // Assuming you have an OrderUpdated event
                             if let Some((order_id, update_type)) = ID_UPDATE_TYPE.remove(&order_id) {
                                 let event = OrderUpdateEvent::OrderUpdated {
-                                    brokerage: client.brokerage.clone(),
+                                    brokerage: websocket.brokerage.clone(),
                                     account_id: AccountId::from(account_id),
                                     update_type,
                                     order_id: order_id.clone(),
@@ -686,7 +686,7 @@ pub async fn match_order_plant_id(
                         },
                         NotifyType::ModificationFailed | NotifyType::CancellationFailed => {
                             let event = OrderUpdateEvent::OrderUpdateRejected {
-                                brokerage: client.brokerage.clone(),
+                                brokerage: websocket.brokerage.clone(),
                                 account_id: AccountId::from(account_id),
                                 order_id: order_id.clone(),
                                 reason: msg.status.unwrap_or_default(),

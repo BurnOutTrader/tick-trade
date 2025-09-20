@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use bytes::Bytes;
-use crate::client::api_base::RithmicApiClient;
-use crate::client::errors::RithmicApiError;
+use crate::websocket::api_base::RithmicApiClient;
+use crate::websocket::errors::RithmicApiError;
 
 #[allow(dead_code)]
 impl RithmicApiClient {

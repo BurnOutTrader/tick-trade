@@ -8,13 +8,13 @@ use prost::Message;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
 use tracing::{error, info, warn};
-use crate::client::api_base::RithmicApiClient;
+use crate::websocket::api_base::RithmicApiClient;
 use standard_lib::engine_core::api_traits::FuturesUniverseProvider;
 use standard_lib::securities::futures_helpers;
 use standard_lib::securities::security::PricingSpecs;
 use standard_lib::securities::symbols::{Currency, Exchange, SymbolId};
-use crate::client::rithmic_proto_objects::rti::{ResponseProductCodes, ResponseReferenceData};
-use crate::client::rithmic_proto_objects::rti::request_login::SysInfraType;
+use crate::websocket::rithmic_proto_objects::rti::{ResponseProductCodes, ResponseReferenceData};
+use crate::websocket::rithmic_proto_objects::rti::request_login::SysInfraType;
 
 fn windows_tz_to_iana(s: &str) -> Option<&'static str> {
     match s {

@@ -1,21 +1,21 @@
 use std::sync::Arc;
 use bytes::Bytes;
 use standard_lib::market_data::base_data::Resolution;
-use crate::client::api_base::{ActiveSub, RithmicApiClient, SubType};
-use crate::client::errors::RithmicApiError;
-use crate::client::rithmic_proto_objects::rti::request_login::SysInfraType;
-use crate::client::rithmic_proto_objects::rti::RequestTimeBarUpdate;
+use crate::websocket::api_base::{ActiveSub, RithmicApiClient, SubType};
+use crate::websocket::errors::RithmicApiError;
+use crate::websocket::rithmic_proto_objects::rti::request_login::SysInfraType;
+use crate::websocket::rithmic_proto_objects::rti::RequestTimeBarUpdate;
 const PLANT: SysInfraType = SysInfraType::HistoryPlant;
 #[allow(dead_code)]
 impl RithmicApiClient {
     pub(crate) async fn request_time_bar_update(self: &Arc<Self>, symbol: String, exchange: String, resolution: Resolution, request: i32) -> Result<(), RithmicApiError> {
         let (bar_type, num) = match resolution {
-            Resolution::Seconds(q) => (crate::client::rithmic_proto_objects::rti::request_time_bar_update::BarType::SecondBar,Some(q as i32)),
-            Resolution::Minutes(q) => (crate::client::rithmic_proto_objects::rti::request_time_bar_update::BarType::SecondBar,Some(q as i32)),
-            Resolution::Hours(q) => (crate::client::rithmic_proto_objects::rti::request_time_bar_update::BarType::SecondBar,Some(q as i32)),
+            Resolution::Seconds(q) => (crate::websocket::rithmic_proto_objects::rti::request_time_bar_update::BarType::SecondBar, Some(q as i32)),
+            Resolution::Minutes(q) => (crate::websocket::rithmic_proto_objects::rti::request_time_bar_update::BarType::SecondBar, Some(q as i32)),
+            Resolution::Hours(q) => (crate::websocket::rithmic_proto_objects::rti::request_time_bar_update::BarType::SecondBar, Some(q as i32)),
             Resolution::TickBars(_) => return Err(RithmicApiError::MappingError("TickBars not supported for TimeBarUpdate".to_string())),
-            Resolution::Daily => (crate::client::rithmic_proto_objects::rti::request_time_bar_update::BarType::DailyBar,None),
-            Resolution::Weekly => (crate::client::rithmic_proto_objects::rti::request_time_bar_update::BarType::WeeklyBar,None),
+            Resolution::Daily => (crate::websocket::rithmic_proto_objects::rti::request_time_bar_update::BarType::DailyBar, None),
+            Resolution::Weekly => (crate::websocket::rithmic_proto_objects::rti::request_time_bar_update::BarType::WeeklyBar, None),
             _ => return Err(RithmicApiError::MappingError("Unacceptable resolution for time bar update".to_string())),
         };
         const TID: i32 = 200;
@@ -42,7 +42,7 @@ impl RithmicApiClient {
         self.send_message(PLANT, req).await
     }
 
-    // these arent needed as its handled in client base
+    // these arent needed as its handled in websocket base
     /*pub(crate) fn request_time_bar_replay(self: Arc<Self>) -> Result<Bytes, RithmicApiError> {
         todo!()
     }

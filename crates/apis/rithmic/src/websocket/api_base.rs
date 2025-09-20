@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::client::helpers::{is_weekend_or_off_hours, next_chicago_market_open};
+use crate::websocket::helpers::{is_weekend_or_off_hours, next_chicago_market_open};
 use std::io::Cursor;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -18,17 +18,17 @@ use futures_util::stream::{SplitSink, SplitStream};
 use tokio::time;
 #[allow(unused_imports)]
 use super::rithmic_proto_objects::rti::{RequestHeartbeat, RequestLogin, RequestLogout, RequestRithmicSystemInfo, ResponseLogin, ResponseRithmicSystemInfo};
-use crate::client::errors::RithmicApiError;
-use crate::client::rithmic_proto_objects::rti::request_login::SysInfraType;
-use crate::client::server_models::{RithmicCredentials, RITHMIC_SERVERS};
+use crate::websocket::errors::RithmicApiError;
+use crate::websocket::rithmic_proto_objects::rti::request_login::SysInfraType;
+use crate::websocket::server_models::{RithmicCredentials, RITHMIC_SERVERS};
 use tracing::{error, info, warn};
-use crate::client::outgoing::Outgoing;
+use crate::websocket::outgoing::Outgoing;
 use crate::plant_handlers::handle_repo_plant::match_repo_plant_id;
 use crate::plant_handlers::tick_plant::handle_tick_plant::match_ticker_plant_id;
 use bytes::Bytes;
 use standard_lib::market_data::base_data::Resolution;
 use standard_lib::engine_core::data_events::SubscriptionHandle;
-use crate::client::rithmic_proto_objects::rti::request_market_data_update::UpdateBits;
+use crate::websocket::rithmic_proto_objects::rti::request_market_data_update::UpdateBits;
 use crate::plant_handlers::{ChunkVec, HasUserMsg, PendingEntry};
 use crate::plant_handlers::history_plant::handle_history_plant::match_history_plant_id;
 use std::sync::atomic::AtomicBool;
@@ -41,8 +41,8 @@ use standard_lib::engine_core::event_hub::EventHub;
 use standard_lib::engine_core::provider_resolver::{ProviderResolver, SecurityResolver};
 use standard_lib::engine_core::public_classes::{FeedKind, MarketDataRequest};
 use standard_lib::securities::symbols::Exchange;
-use crate::client::rithmic_proto_objects::rti::{RequestTickBarReplay, RequestTimeBarReplay};
-use crate::client::rithmic_proto_objects::rti::request_time_bar_replay::{Direction, TimeOrder};
+use crate::websocket::rithmic_proto_objects::rti::{RequestTickBarReplay, RequestTimeBarReplay};
+use crate::websocket::rithmic_proto_objects::rti::request_time_bar_replay::{Direction, TimeOrder};
 
 
 
@@ -749,7 +749,7 @@ impl RithmicApiClient {
                     user_msg: vec![],
                     symbol: Some(symbol),
                     exchange: Some(exchange.to_string()),
-                    bar_type: Some(crate::client::rithmic_proto_objects::rti::request_tick_bar_replay::BarType::TickBar.into()),
+                    bar_type: Some(crate::websocket::rithmic_proto_objects::rti::request_tick_bar_replay::BarType::TickBar.into()),
                     bar_sub_type: Some(1),
                     bar_type_specifier: Some(num.to_string()),
                     start_index: Some(window_start.timestamp() as i32),
@@ -757,26 +757,26 @@ impl RithmicApiClient {
                     user_max_count: Some(2000),
                     custom_session_open_ssm: None,
                     custom_session_close_ssm: None,
-                    direction: Some(crate::client::rithmic_proto_objects::rti::request_tick_bar_replay::Direction::First.into()),
-                    time_order: Some(crate::client::rithmic_proto_objects::rti::request_tick_bar_replay::TimeOrder::Forwards.into()),
+                    direction: Some(crate::websocket::rithmic_proto_objects::rti::request_tick_bar_replay::Direction::First.into()),
+                    time_order: Some(crate::websocket::rithmic_proto_objects::rti::request_tick_bar_replay::TimeOrder::Forwards.into()),
                     resume_bars: Some(false),
                 };
                 self.send_with_reply(PLANT, req).await
             }
             _ => {
                 let (num, res_type) = match resolution {
-                    Resolution::Seconds(num) => (Some(num as i32), crate::client::rithmic_proto_objects::rti::request_time_bar_replay::BarType::SecondBar.into()),
+                    Resolution::Seconds(num) => (Some(num as i32), crate::websocket::rithmic_proto_objects::rti::request_time_bar_replay::BarType::SecondBar.into()),
                     Resolution::Minutes(num) =>
                         if num == 1 {
-                            (Some(60), crate::client::rithmic_proto_objects::rti::request_time_bar_replay::BarType::SecondBar.into())
+                            (Some(60), crate::websocket::rithmic_proto_objects::rti::request_time_bar_replay::BarType::SecondBar.into())
                         }else {
-                            (Some(num as i32), crate::client::rithmic_proto_objects::rti::request_time_bar_replay::BarType::MinuteBar.into())
+                            (Some(num as i32), crate::websocket::rithmic_proto_objects::rti::request_time_bar_replay::BarType::MinuteBar.into())
                         }
                     Resolution::Daily => {
-                        (None, crate::client::rithmic_proto_objects::rti::request_time_bar_replay::BarType::DailyBar.into())
+                        (None, crate::websocket::rithmic_proto_objects::rti::request_time_bar_replay::BarType::DailyBar.into())
                     }
                     Resolution::Weekly => {
-                        (None, crate::client::rithmic_proto_objects::rti::request_time_bar_replay::BarType::WeeklyBar.into())
+                        (None, crate::websocket::rithmic_proto_objects::rti::request_time_bar_replay::BarType::WeeklyBar.into())
                     }
                     _ => return Err(RithmicApiError::EngineErrorDebug("Incrorrect resolution for candles".to_string()))
                 };
@@ -848,7 +848,7 @@ async fn do_live_req(client: &Arc<RithmicApiClient>, req: MarketDataRequest, act
             match res {
                 Resolution::TickBars(_n) => {
                     // TODO: Tick Bar Update / Replay (204/206)
-                    // client.request_tick_bar_update(req.symbol.clone(), req.exchange.clone(), action, UpdateBits::TickBars).await?;
+                    // websocket.request_tick_bar_update(req.symbol.clone(), req.exchange.clone(), action, UpdateBits::TickBars).await?;
                 }
                 _ => {
                     client.request_market_data_update(
@@ -894,7 +894,7 @@ async fn do_live_req(client: &Arc<RithmicApiClient>, req: MarketDataRequest, act
         match res {
             Resolution::TickBars(_n) => {
                 // TODO: if you support tick-bar updates natively, mirror above with Unsubscribe
-                // client.request_tick_bar_update(..., action, UpdateBits::TickBars).await?;
+                // websocket.request_tick_bar_update(..., action, UpdateBits::TickBars).await?;
             }
             _ => {
                 // Note: HistoryPlant endpoint; your `request_time_bar_update` should route there

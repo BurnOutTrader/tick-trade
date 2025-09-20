@@ -9,7 +9,7 @@ use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use smallvec::SmallVec;
 use tokio::sync::oneshot;
-use crate::client::rithmic_proto_objects::rti::{RequestAuxilliaryReferenceData, RequestDepthByOrderSnapshot, RequestFrontMonthContract, RequestGetInstrumentByUnderlying, RequestGetVolumeAtPrice, RequestGiveTickSizeTypeTable, RequestProductCodes, RequestReferenceData, RequestRithmicSystemGatewayInfo, RequestRithmicSystemInfo, RequestSearchSymbols, RequestTickBarReplay, RequestTimeBarReplay};
+use crate::websocket::rithmic_proto_objects::rti::{RequestAuxilliaryReferenceData, RequestDepthByOrderSnapshot, RequestFrontMonthContract, RequestGetInstrumentByUnderlying, RequestGetVolumeAtPrice, RequestGiveTickSizeTypeTable, RequestProductCodes, RequestReferenceData, RequestRithmicSystemGatewayInfo, RequestRithmicSystemInfo, RequestSearchSymbols, RequestTickBarReplay, RequestTimeBarReplay};
 
 #[allow(dead_code)]
 pub(crate) fn create_datetime(ssboe: i64, usecs: i64) -> DateTime<Utc> {
