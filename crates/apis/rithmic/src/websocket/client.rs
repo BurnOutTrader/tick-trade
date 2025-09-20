@@ -28,7 +28,6 @@ use bytes::Bytes;
 use standard_lib::market_data::base_data::Resolution;
 use standard_lib::engine_core::data_events::SubscriptionHandle;
 use crate::websocket::rithmic_proto_objects::rti::request_market_data_update::UpdateBits;
-use crate::websocket::mapping::{ChunkVec, HasUserMsg, PendingEntry};
 use crate::websocket::mapping::history_plant::map_history_plant::match_history_plant_id;
 use std::sync::atomic::AtomicBool;
 use anyhow::Result;
@@ -41,6 +40,7 @@ use standard_lib::engine_core::public_classes::{FeedKind, MarketDataRequest};
 use standard_lib::securities::symbols::Exchange;
 use crate::common::models::RithmicCredentials;
 use crate::websocket::{helpers, models};
+use crate::websocket::mapping::helpers::{ChunkVec, HasUserMsg, PendingEntry};
 use crate::websocket::rithmic_proto_objects::rti::{RequestTickBarReplay, RequestTimeBarReplay};
 use crate::websocket::rithmic_proto_objects::rti::request_time_bar_replay::{Direction, TimeOrder};
 
