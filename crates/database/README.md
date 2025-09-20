@@ -23,6 +23,17 @@ We use a hybrid model combining **Parquet** and **DuckDB**:
 
 This ensures both **fast queries** and **minimal duplication**.
 
+```rust
+// Candles (e.g., 1s or 5m)
+let written = ingest_candles(&conn, "Rithmic", "MNQ", "CME", Resolution::Seconds(1), &candle_rows, data_root, 9)?;
+
+// BBO
+let written = ingest_bbo(&conn, "Rithmic", "MNQ", "CME", &bbo_rows, data_root, 9)?;
+
+// Order books
+let written = ingest_books(&conn, "Rithmic", "MNQ", &book_snaps, data_root, 9)?;
+```
+
 ---
 
 ## 2) Catalog and Metadata

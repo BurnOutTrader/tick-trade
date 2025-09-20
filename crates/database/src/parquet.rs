@@ -152,7 +152,6 @@ fn to_batch_bbo(rows: &[BboRow]) -> Result<RecordBatch, ParquetError> {
         (Float64Builder::new(), Float64Builder::new(), Float64Builder::new(), Float64Builder::new());
     let mut bid_orders = UInt32Builder::new();
     let mut ask_orders = UInt32Builder::new();
-    let mut venue_seq = UInt32Builder::new();
     let mut is_snapshot = BooleanBuilder::new();
     let mut venue_seq = UInt32Builder::new();
 
@@ -166,7 +165,6 @@ fn to_batch_bbo(rows: &[BboRow]) -> Result<RecordBatch, ParquetError> {
 
         match r.bid_orders { Some(v)=>bid_orders.append_value(v), None=>bid_orders.append_null() }
         match r.ask_orders { Some(v)=>ask_orders.append_value(v), None=>ask_orders.append_null() }
-        match r.venue_seq  { Some(v)=>venue_seq.append_value(v),  None=>venue_seq.append_null()  }
         match r.is_snapshot{ Some(v)=>is_snapshot.append_value(v), None=>is_snapshot.append_null() }
     }
 

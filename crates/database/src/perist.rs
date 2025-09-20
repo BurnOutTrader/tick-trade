@@ -1,6 +1,6 @@
 use std::{fs, path::{Path, PathBuf}};
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, NaiveDate, TimeZone, Utc};
+use chrono::{NaiveDate, Utc};
 use crate::models::{BboRow, CandleRow, DataKind, TickRow};
 use crate::duck::upsert_partition;
 use standard_lib::market_data::base_data::{OrderBook, Resolution};
@@ -188,30 +188,35 @@ pub fn persist_books_partition_duckdb(
     conn: &duckdb::Connection,
     provider: &str,
     symbol: &str,
-    day: NaiveDate,
-    snapshots: &[OrderBook],   // uses your JSON ladder approach inside
-    data_root: &Path,
-    zstd_level: i32,           // not used directly by COPY, included for parity
-) -> Result<PathBuf> {
+    day: chrono::NaiveDate,
+    snapshots: &[OrderBook],
+    data_root: &std::path::Path,
+    zstd_level: i32, // optional; see PRAGMA notes below
+) -> anyhow::Result<std::path::PathBuf> {
+    use std::{fs, path::PathBuf};
+    use chrono::Utc;
+
     if snapshots.is_empty() {
-        return Err(anyhow!("persist_books_partition_duckdb: empty batch"));
+        anyhow::bail!("persist_books_partition_duckdb: empty batch");
     }
 
+    // 1) dataset
     let dataset_id = ensure_dataset(conn, provider, symbol, DataKind::Book, None)?;
 
+    // 2) unique path
     let dir = partition_dir_for_day(data_root, provider, symbol, "book", day);
     fs::create_dir_all(&dir)?;
     let ts_ns = Utc::now().timestamp_nanos_opt().unwrap_or(0);
     let fname = format!("books-{}-{}.parquet", ts_ns, nanoid::nanoid!(6));
-    let out_path = dir.join(fname);
+    let out_path: PathBuf = dir.join(fname);
 
-    // temp table & insert rows (as in your earlier write helper)
+    // 3) staging table with BIGINT ns time
     conn.execute_batch(
         r#"
         create temp table if not exists _tmp_books_ingest (
             symbol     TEXT,
             exchange   TEXT,
-            time       TIMESTAMP,
+            time_ns    BIGINT,    -- epoch ns, NOT TIMESTAMP
             bids_json  TEXT,
             asks_json  TEXT
         );
@@ -220,42 +225,68 @@ pub fn persist_books_partition_duckdb(
     )?;
 
     let mut ins = conn.prepare(
-        "insert into _tmp_books_ingest(symbol, exchange, time, bids_json, asks_json)
-         values (?, ?, to_timestamp(?), ?, ?)",
+        "insert into _tmp_books_ingest(symbol, exchange, time_ns, bids_json, asks_json)
+         values (?, ?, ?, ?, ?)",
     )?;
 
     let mut rows = 0i64;
-    let mut min_ts: Option<DateTime<Utc>> = None;
-    let mut max_ts: Option<DateTime<Utc>> = None;
+    let mut min_ns: Option<i64> = None;
+    let mut max_ns: Option<i64> = None;
 
     for ob in snapshots {
-        // JSON-encode as compact [[px,sz],...] with Decimal to string
-        let bids_arr: Vec<_> = ob.bids.iter().map(|(p,s)| serde_json::json!([p.to_string(), s.to_string()])).collect();
-        let asks_arr: Vec<_> = ob.asks.iter().map(|(p,s)| serde_json::json!([p.to_string(), s.to_string()])).collect();
+        // encode ladders as compact [[price,size], ...] strings
+        let bids_arr: Vec<_> = ob.bids.iter()
+            .map(|(p,s)| serde_json::json!([p.to_string(), s.to_string()]))
+            .collect();
+        let asks_arr: Vec<_> = ob.asks.iter()
+            .map(|(p,s)| serde_json::json!([p.to_string(), s.to_string()]))
+            .collect();
         let bids_json = serde_json::to_string(&bids_arr)?;
         let asks_json = serde_json::to_string(&asks_arr)?;
         let exch_str = format!("{:?}", ob.exchange);
 
+        // epoch ns (i128 -> i64 clamp: your times should be safe within i64 epoch ns range)
+        let t_ns = ob.time.timestamp_nanos_opt()
+            .ok_or_else(|| anyhow::anyhow!("invalid timestamp in OrderBook"))? as i64;
+
         ins.execute(duckdb::params![
             &ob.symbol,
             &exch_str,
-            ob.time.to_rfc3339(),
+            t_ns,
             &bids_json,
             &asks_json
         ])?;
 
         rows += 1;
-        min_ts = Some(min_ts.map_or(ob.time, |t| t.min(ob.time)));
-        max_ts = Some(max_ts.map_or(ob.time, |t| t.max(ob.time)));
+
+        let t_ns = t_ns;
+        min_ns = Some(min_ns.map_or(t_ns, |m| m.min(t_ns)));
+        max_ns = Some(max_ns.map_or(t_ns, |m| m.max(t_ns)));
     }
 
-    // COPY with zstd compression
-    let out_str = format!("'{}'", out_path.to_string_lossy().replace('\'', "''"));
-    let sql = format!("copy _tmp_books_ingest to {} (format parquet, compression 'zstd');", out_str);
-    conn.execute_batch(&sql)?;
+    // 4) COPY to Parquet with zstd (optionally set level if supported)
+    // Some DuckDB builds expose these pragmas; harmless to skip if not supported.
+    // If you see an error, remove the two PRAGMA lines below.
+    let out_str = out_path.to_string_lossy().replace('\'', "''");
+    conn.execute_batch(&format!(
+        r#"
+        PRAGMA parquet_compression='zstd';
+        PRAGMA parquet_zstd_compression_level={level};
 
+        copy _tmp_books_ingest to '{path}'
+        (format parquet, compression 'zstd');
+        "#,
+        level = zstd_level,
+        path  = out_str,
+    ))?;
+
+    // 5) file stats
     let md = fs::metadata(&out_path)?;
     let bytes = md.len() as i64;
+
+    // 6) catalog upsert (convert ns -> DateTime<Utc> using your helper)
+    let min_ts = ns_to_dt(min_ns.expect("min_ns"));
+    let max_ts = ns_to_dt(max_ns.expect("max_ns"));
 
     upsert_partition(
         conn,
@@ -264,8 +295,8 @@ pub fn persist_books_partition_duckdb(
         "parquet",
         rows,
         bytes,
-        min_ts.unwrap(),
-        max_ts.unwrap(),
+        min_ts,
+        max_ts,
         None,
         None,
         Some(day),

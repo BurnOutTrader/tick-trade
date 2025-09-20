@@ -184,8 +184,3 @@ fn kind_key(k: DataKind) -> String {
     }.to_string()
 }
 
-fn ns_to_dt(ns: i64) -> chrono::DateTime<chrono::Utc> {
-    let secs = ns.div_euclid(1_000_000_000);
-    let nanos = ns.rem_euclid(1_000_000_000) as u32;
-    chrono::DateTime::from_timestamp(secs, nanos).expect("valid ns")
-}

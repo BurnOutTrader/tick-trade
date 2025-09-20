@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use chrono::{DateTime, NaiveDate, TimeZone, Utc};
+use chrono::NaiveDate;
 use duckdb::Connection;
 use standard_lib::market_data::base_data::Resolution;
 use crate::catalog::{get_or_create_dataset_id, get_or_create_provider_id, get_or_create_symbol_id};
