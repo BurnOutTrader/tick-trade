@@ -174,15 +174,8 @@ pub struct Bbo {
     /// Venue/publisher sequence number (Databento: sequence, other feeds often have one).
     pub venue_seq: Option<u32>,
 
-    /// Matching-engine and capture timestamps when available.
-    pub ts_event: Option<chrono::DateTime<chrono::Utc>>,
-    pub ts_recv:  Option<chrono::DateTime<chrono::Utc>>,
-
     /// Whether this record is a snapshot/seed vs. incremental (many feeds set this).
     pub is_snapshot: Option<bool>,
-
-    /// Feed-specific flags if provided (e.g., Databento flags byte).
-    pub flags: Option<u8>,
 }
 /// Full order book snapshot.
 ///

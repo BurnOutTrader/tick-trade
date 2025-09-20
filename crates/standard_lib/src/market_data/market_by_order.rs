@@ -408,10 +408,7 @@ impl L3Book {
                 bid_orders: bid_ct.map(|c| c as u32),
                 ask_orders: ask_ct.map(|c| c as u32),
                 venue_seq:  e.venue_seq,
-                ts_event:   e.ts_event.or(self.last_ts_event),
-                ts_recv:    e.ts_recv.or(self.last_ts_recv),
                 is_snapshot: Some(false),
-                flags:      e.flags.map(|f| f.raw()),
             });
         }
         None

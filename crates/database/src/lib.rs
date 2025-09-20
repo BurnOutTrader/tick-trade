@@ -8,8 +8,10 @@ pub mod paths;
 pub mod append;
 pub mod ingest;
 pub mod duck_queries;
-mod merge;
-mod replay;
+pub mod merge;
+pub mod replay;
+pub mod helpers;
+pub mod perist;
 // ⬇️ declare the file so the module exists
 
 

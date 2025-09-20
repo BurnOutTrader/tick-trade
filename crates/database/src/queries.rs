@@ -4,12 +4,26 @@ use anyhow::{anyhow, Context};
 use chrono::{DateTime, Utc};
 use duckdb::{params, Connection, OptionalExt};
 use rust_decimal::Decimal;
-use standard_lib::market_data::base_data::{Candle, OrderBook, Resolution, Side, Tick};
+use standard_lib::market_data::base_data::{Bbo, Candle, OrderBook, Resolution, Side, Tick};
 use standard_lib::securities::symbols::Exchange;
 use crate::duck::{latest_available, resolve_dataset_id};
 use crate::layout::Layout;
 use crate::models::{DataKind, SeqBound};
 use serde_json::Value as JsonValue;
+
+#[inline]
+fn dt_to_us(dt: DateTime<Utc>) -> i64 {
+    dt.timestamp()
+        .saturating_mul(1_000_000)
+        .saturating_add((dt.timestamp_subsec_nanos() / 1_000) as i64)
+}
+
+#[inline]
+fn us_to_dt(us: i64) -> DateTime<Utc> {
+    let secs  = us.div_euclid(1_000_000);
+    let micros = (us.rem_euclid(1_000_000)) as u32;
+    DateTime::from_timestamp(secs, micros * 1_000).expect("valid micros ts")
+}
 
 /// Return earliest timestamp available for a single (provider, kind, symbol, exchange, res).
 /// Uses partition pruning + Parquet stats; reads no payloads when min/max suffice.
@@ -22,33 +36,40 @@ pub fn earliest_event_ts(
     exchange: &str,
     res: Resolution,
 ) -> anyhow::Result<Option<DateTime<Utc>>> {
+    // choose the “min” column per kind
+    let (time_col, is_bigint) = match kind {
+        DataKind::Tick   => ("key_ts_utc_us", true),
+        DataKind::Bbo    => ("key_ts_utc_us", true),   // you keep both key_ts_utc_us and time_us; choose key*
+        DataKind::Candle => ("time_start_us", true),   // earliest by start (max by end elsewhere)
+        DataKind::Book   => ("time", false),           // still TIMESTAMP in your writer
+    };
+
     let glob = layout.glob_for(provider, kind, symbol, &exchange, res);
-
-    // NOTE:
-    // - HIVE_PARTITIONING=1 makes DuckDB expose partition keys as columns.
-    // - We still filter on those columns for super-cheap file pruning.
-    // - The time column inside parquet must be a TIMESTAMP (UTC). If it’s int,
-    //   cast it in the query or write it as timestamp when producing parquet.
-    let sql = r#"
-        SELECT min(time) AS min_ts
-        FROM read_parquet(?, HIVE_PARTITIONING=1, UNION_BY_NAME=1)
-        WHERE provider = ? AND kind = ? AND symbol = ? AND exchange = ? AND res = ?
-    "#;
-
-    let res_s = format!("{res:?}"); // “Ticks”, “Minutes5”, etc., as in layout
+    let res_s  = format!("{res:?}");
     let kind_s = format!("{kind:?}");
 
-    let mut stmt = conn.prepare(sql)?;
+    let sql = format!(
+        r#"
+        SELECT {agg} AS min_ts
+        FROM read_parquet(?, HIVE_PARTITIONING=1, UNION_BY_NAME=1)
+        WHERE provider = ? AND kind = ? AND symbol = ? AND exchange = ? AND res = ?
+        "#,
+        agg = if is_bigint { "min(CAST(NULLIF(" } else { "min(" }.to_owned()
+            + time_col +
+            if is_bigint { ", 0) AS BIGINT))" } else { ")" }
+    );
+
+    let mut stmt = conn.prepare(&sql)?;
     let mut rows = stmt.query(params![glob, provider, kind_s, symbol, exchange, res_s])?;
 
     if let Some(row) = rows.next()? {
-        let min_ts: Option<String> = row.get(0)?;
-        // DuckDB returns RFC3339 string for TIMESTAMP by default in the driver; parse back:
-        let out = match min_ts {
-            Some(s) => Some(DateTime::parse_from_rfc3339(&s)?.with_timezone(&Utc)),
-            None => None,
-        };
-        Ok(out)
+        if is_bigint {
+            let v: Option<i64> = row.get(0)?;
+            Ok(v.map(us_to_dt))
+        } else {
+            let s: Option<String> = row.get(0)?;
+            Ok(s.map(|x| DateTime::parse_from_rfc3339(&x).unwrap().with_timezone(&Utc)))
+        }
     } else {
         Ok(None)
     }
@@ -154,6 +175,76 @@ fn partition_paths_for_range(
     Ok(out)
 }
 
+pub fn get_bbo_in_range(
+    conn: &Connection,
+    provider: &str,
+    symbol: &str,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+) -> anyhow::Result<Vec<Bbo>> {
+    if start >= end { return Ok(Vec::new()); }
+
+    let Some(dataset_id) =
+        resolve_dataset_id(conn, provider, symbol, DataKind::Bbo, None)?
+    else { return Ok(Vec::new()); };
+
+    let paths = partition_paths_for_range(conn, dataset_id, start, end)?;
+    if paths.is_empty() { return Ok(Vec::new()); }
+
+    let src = build_read_parquet_list(&paths)?;
+    let start_us = dt_to_us(start);
+    let end_us   = dt_to_us(end);
+
+    let sql = format!(r#"
+        select
+            symbol, exchange,
+            CAST(bid AS VARCHAR), CAST(bid_size AS VARCHAR),
+            CAST(ask AS VARCHAR), CAST(ask_size AS VARCHAR),
+            key_ts_utc_us, time_us,
+            bid_orders, ask_orders, venue_seq, is_snapshot
+        from {src}
+        where symbol = ?
+          and key_ts_utc_us >= ?
+          and key_ts_utc_us <  ?
+        order by key_ts_utc_us asc
+        "#, src=src);
+
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query(params![symbol, start_us, end_us])?;
+
+    let mut out = Vec::new();
+    while let Some(r) = rows.next()? {
+        let sym: String = r.get(0)?;
+        let exch: String = r.get(1)?;
+        let bid_s: String = r.get(2)?;
+        let bid_sz_s: String = r.get(3)?;
+        let ask_s: String = r.get(4)?;
+        let ask_sz_s: String = r.get(5)?;
+        let key_us: i64 = r.get(6)?;
+        let _time_us: i64 = r.get(7)?; // keep if you need separate device time
+        let bid_orders: Option<u32> = r.get(8)?;
+        let ask_orders: Option<u32> = r.get(9)?;
+        let venue_seq: Option<i32>  = r.get(10)?;
+        let is_snapshot: Option<bool> = r.get(11)?;
+
+        let exchange = Exchange::from_str(&exch).ok_or_else(|| anyhow!("unknown exchange '{exch}'"))?;
+        out.push(Bbo {
+            symbol: sym,
+            exchange,
+            bid: Decimal::from_str(&bid_s)?,
+            bid_size: Decimal::from_str(&bid_sz_s)?,
+            ask: Decimal::from_str(&ask_s)?,
+            ask_size: Decimal::from_str(&ask_sz_s)?,
+            time: us_to_dt(key_us),
+            bid_orders,
+            ask_orders,
+            venue_seq: venue_seq.map(|v| v as u32),
+            is_snapshot,
+        });
+    }
+    Ok(out)
+}
+
 // ---------- Ticks ----------
 
 /// Get ticks for [start, end) using DuckDB to scan the *overlapping* parquet files only.
@@ -165,113 +256,88 @@ pub fn get_ticks_in_range(
     start: DateTime<Utc>,
     end: DateTime<Utc>,
 ) -> anyhow::Result<Vec<Tick>> {
-    if start >= end {
-        return Ok(Vec::new());
-    }
+    if start >= end { return Ok(Vec::new()); }
 
     let Some(dataset_id) = resolve_dataset_id(conn, provider, symbol, DataKind::Tick, None)? else {
         return Ok(Vec::new());
     };
 
     let paths = partition_paths_for_range(conn, dataset_id, start, end)?;
-    if paths.is_empty() {
-        return Ok(Vec::new());
-    }
+    if paths.is_empty() { return Ok(Vec::new()); }
 
     let src = build_read_parquet_list(&paths)?;
+    let start_us = dt_to_us(start);
+    let end_us   = dt_to_us(end);
 
-    // Push down time filter and project only needed columns.
-    // Use epoch_ns() to avoid FromSql timestamp issues, then convert in Rust.
-    // QUALIFY requires DuckDB ≥0.8.0 (covered by crate ≥1.0). If needed, emulate using subquery + ROW_NUMBER().
+    // Dedup: first per (time, exec_id) ordered by venue_seq; adjust if you also store maker/taker IDs.
     let sql = format!(r#"
         with src as (
           select
-              symbol,
-              exchange,
-              price,
-              size,
-              side,
-              exec_id,
-              maker_order_id,
-              taker_order_id,
-              venue_seq,
-              epoch_ns(time)      as time_ns,
-              epoch_ns(ts_event)  as ts_event_ns,
-              epoch_ns(ts_recv)   as ts_recv_ns
+              symbol, exchange, price, size, side,
+              exec_id, venue_seq,
+              key_ts_utc_us as t_us,
+              ts_event_us, ts_recv_us
           from {src}
           where symbol = ?
-            and time >= to_timestamp(?)
-            and time <  to_timestamp(?)
+            and key_ts_utc_us >= ?
+            and key_ts_utc_us <  ?
         ),
         ranked as (
           select *,
                  row_number() over (
-                   partition by time_ns,
-                                coalesce(exec_id,''),
-                                coalesce(maker_order_id,''),
-                                coalesce(taker_order_id,'')
-                   order by coalesce(venue_seq, 2147483647) asc
+                   partition by t_us, coalesce(exec_id,'')
+                   order by coalesce(venue_seq, 2147483647)
                  ) as rn
           from src
         )
         select
-            symbol,
-            exchange,
-            CAST(price AS VARCHAR) as price_s,
-            CAST(size  AS VARCHAR) as size_s,
-            side, exec_id, maker_order_id, taker_order_id, venue_seq,
-            time_ns, ts_event_ns, ts_recv_ns
+            symbol, exchange,
+            CAST(price AS VARCHAR), CAST(size AS VARCHAR),
+            side, exec_id, venue_seq,
+            t_us, ts_event_us, ts_recv_us
         from ranked
         where rn = 1
-        order by time_ns asc, coalesce(venue_seq, 2147483647) asc
+        order by t_us asc, coalesce(venue_seq, 2147483647) asc
         "#, src=src);
 
     let mut stmt = conn.prepare(&sql)?;
-    let mut rows = stmt.query(params![symbol, start.to_rfc3339(), end.to_rfc3339()])?;
-    let mut out = Vec::new();
+    let mut rows = stmt.query(params![symbol, start_us, end_us])?;
 
+    let mut out = Vec::new();
     while let Some(r) = rows.next()? {
         let sym: String = r.get(0)?;
-        let exch_str: String = r.get(1)?;
+        let exch: String = r.get(1)?;
         let price_s: String = r.get(2)?;
         let size_s:  String = r.get(3)?;
         let side_str: Option<String> = r.get(4)?;
         let exec_id: Option<String> = r.get(5)?;
-        let maker_order_id: Option<String> = r.get(6)?;
-        let taker_order_id: Option<String> = r.get(7)?;
-        let venue_seq: Option<i32> = r.get(8)?;
-        let t_ns: i64 = r.get(9)?;
-        let t_event_ns: Option<i64> = r.get(10)?;
-        let t_recv_ns:  Option<i64> = r.get(11)?;
+        let venue_seq: Option<i32>  = r.get(6)?;
+        let t_us: i64 = r.get(7)?;
+        let t_event_us: Option<i64> = r.get(8)?;
+        let t_recv_us:  Option<i64> = r.get(9)?;
 
-        let price = rust_decimal::Decimal::from_str(&price_s)?;
-        let size  = rust_decimal::Decimal::from_str(&size_s)?;
-
-        let exchange = Exchange::from_str(&exch_str)
-            .ok_or_else(|| anyhow!("unknown exchange '{}' in parquet", exch_str))?;
-
+        let price = Decimal::from_str(&price_s)?;
+        let size  = Decimal::from_str(&size_s)?;
+        let exchange = Exchange::from_str(&exch).ok_or_else(|| anyhow!("unknown exchange '{exch}'"))?;
         let side = match side_str.as_deref() {
-            Some("Buy")  | Some("B") => Side::Buy,
-            Some("Sell") | Some("S") => Side::Sell,
+            Some("Buy") | Some("B") => Side::Buy,
+            Some("Sell")| Some("S") => Side::Sell,
             _ => Side::None,
         };
 
         out.push(Tick {
             symbol: sym,
             exchange,
-            price,
-            size,
-            side,
-            time: epoch_ns_to_dt(t_ns),
+            price, size, side,
+            time: us_to_dt(t_us),
             exec_id,
-            maker_order_id,
-            taker_order_id,
+            maker_order_id: None,
+            taker_order_id: None,
             venue_seq: venue_seq.map(|v| v as u32),
-            ts_event: t_event_ns.map(epoch_ns_to_dt),
-            ts_recv:  t_recv_ns.map(epoch_ns_to_dt),
+            ts_event: t_event_us.map(us_to_dt),
+            ts_recv:  t_recv_us.map(us_to_dt),
         });
     }
-
     Ok(out)
 }
 
@@ -303,55 +369,43 @@ pub fn get_candles_in_range(
     start: DateTime<Utc>,
     end: DateTime<Utc>,
 ) -> anyhow::Result<Vec<Candle>> {
-    if start >= end {
-        return Ok(Vec::new());
-    }
+    if start >= end { return Ok(Vec::new()); }
 
-    let Some(dataset_id) = resolve_dataset_id(conn, provider, symbol, DataKind::Candle, Some(resolution))? else {
-        return Ok(Vec::new());
-    };
+    let Some(dataset_id) =
+        resolve_dataset_id(conn, provider, symbol, DataKind::Candle, Some(resolution))?
+    else { return Ok(Vec::new()); };
 
     let paths = partition_paths_for_range(conn, dataset_id, start, end)?;
-    if paths.is_empty() {
-        return Ok(Vec::new());
-    }
+    if paths.is_empty() { return Ok(Vec::new()); }
 
     let src = build_read_parquet_list(&paths)?;
+    let start_us = dt_to_us(start);
+    let end_us   = dt_to_us(end);
 
-    // Cast numeric columns to VARCHAR so we can parse into rust_decimal::Decimal losslessly.
-    // Use epoch_ns() to avoid FromSql timestamp issues and preserve nanoseconds.
-    // If your parquet stores a `resolution` column, add: `and resolution = ?` and pass it as a param.
-    let sql = format!(
-        r#"
+    let sql = format!(r#"
         select
-            symbol,
-            exchange,
-            CAST(open  AS VARCHAR) as open_s,
-            CAST(high  AS VARCHAR) as high_s,
-            CAST(low   AS VARCHAR) as low_s,
-            CAST(close AS VARCHAR) as close_s,
-            CAST(volume        AS VARCHAR) as volume_s,
-            CAST(ask_volume    AS VARCHAR) as ask_volume_s,
-            CAST(bid_volume    AS VARCHAR) as bid_volume_s,
-            CAST(num_of_trades AS VARCHAR) as num_trades_s,
-            epoch_ns(time_start) as ts_start_ns,
-            epoch_ns(time_end)   as ts_end_ns
+            symbol, exchange,
+            CAST(open  AS VARCHAR), CAST(high  AS VARCHAR),
+            CAST(low   AS VARCHAR), CAST(close AS VARCHAR),
+            CAST(volume      AS VARCHAR),
+            CAST(ask_volume  AS VARCHAR),
+            CAST(bid_volume  AS VARCHAR),
+            CAST(num_trades  AS VARCHAR),
+            time_start_us, time_end_us
         from {src}
         where symbol = ?
-          and time_start >= to_timestamp(?)
-          and time_end   <= to_timestamp(?)
-        order by ts_start_ns asc
-        "#,
-        src = src
-    );
+          and time_start_us >= ?
+          and time_end_us   <= ?
+        order by time_start_us asc
+        "#, src=src);
 
     let mut stmt = conn.prepare(&sql)?;
-    let mut rows = stmt.query(params![symbol, start.to_rfc3339(), end.to_rfc3339()])?;
-    let mut out = Vec::new();
+    let mut rows = stmt.query(params![symbol, start_us, end_us])?;
 
+    let mut out = Vec::new();
     while let Some(r) = rows.next()? {
         let sym: String = r.get(0)?;
-        let exch_str: String = r.get(1)?;
+        let exch: String = r.get(1)?;
 
         let open_s:  String = r.get(2)?;
         let high_s:  String = r.get(3)?;
@@ -361,34 +415,26 @@ pub fn get_candles_in_range(
         let ask_volume_s: String = r.get(7)?;
         let bid_volume_s: String = r.get(8)?;
         let num_trades_s: String = r.get(9)?;
+        let ts_start_us: i64 = r.get(10)?;
+        let ts_end_us:   i64 = r.get(11)?;
 
-        let ts_start_ns: i64 = r.get(10)?;
-        let ts_end_ns:   i64 = r.get(11)?;
-
-        let open  = Decimal::from_str(&open_s)?;
-        let high  = Decimal::from_str(&high_s)?;
-        let low   = Decimal::from_str(&low_s)?;
-        let close = Decimal::from_str(&close_s)?;
-        let volume      = Decimal::from_str(&volume_s)?;
-        let ask_volume  = Decimal::from_str(&ask_volume_s)?;
-        let bid_volume  = Decimal::from_str(&bid_volume_s)?;
-        let num_trades  = Decimal::from_str(&num_trades_s)?;
-
-        let exchange = Exchange::from_str(&exch_str)
-            .ok_or_else(|| anyhow!("unknown exchange '{}' in parquet", exch_str))?;
-
+        let exchange = Exchange::from_str(&exch).ok_or_else(|| anyhow!("unknown exchange '{exch}'"))?;
         out.push(Candle {
             symbol: sym,
             exchange,
-            time_start: epoch_ns_to_dt(ts_start_ns),
-            time_end:   epoch_ns_to_dt(ts_end_ns),
-            open, high, low, close,
-            volume, ask_volume, bid_volume,
-            num_of_trades: num_trades,
+            time_start: us_to_dt(ts_start_us),
+            time_end:   us_to_dt(ts_end_us), // you said we key candles by end elsewhere; here we keep both
+            open:  Decimal::from_str(&open_s)?,
+            high:  Decimal::from_str(&high_s)?,
+            low:   Decimal::from_str(&low_s)?,
+            close: Decimal::from_str(&close_s)?,
+            volume:     Decimal::from_str(&volume_s)?,
+            ask_volume: Decimal::from_str(&ask_volume_s)?,
+            bid_volume: Decimal::from_str(&bid_volume_s)?,
+            num_of_trades: Decimal::from_str(&num_trades_s)?,
             resolution,
         });
     }
-
     Ok(out)
 }
 

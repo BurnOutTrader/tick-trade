@@ -1,4 +1,7 @@
-use crate::models::{Provider, SymbolMeta, UniverseMember};
+use anyhow::anyhow;
+use duckdb::{params, Connection};
+use standard_lib::market_data::base_data::Resolution;
+use crate::models::{DataKind, Provider, SymbolMeta, UniverseMember};
 use crate::duck::{Duck, DuckError};
 
 impl Duck {
@@ -38,4 +41,151 @@ impl Duck {
 
     // expose &Connection for internal helpers
     pub(crate) fn conn(&self) -> &duckdb::Connection { &self.conn }
+}
+
+// String form must match whatever you already use in queries (you used `format!("{res:?}")`).
+fn resolution_key(res: Option<Resolution>) -> Option<String> {
+    res.map(|r| format!("{r:?}"))
+}
+
+/// Insert-if-missing, then return `provider_id`.
+pub fn get_or_create_provider_id(conn: &Connection, provider_code: &str) -> anyhow::Result<i64> {
+    conn.execute(
+        "insert into providers(provider_code) values (?)
+         on conflict(provider_code) do nothing",
+        params![provider_code],
+    )?;
+    let id: i64 = conn.query_row(
+        "select provider_id from providers where provider_code = ?",
+        params![provider_code],
+        |r| r.get(0),
+    )?;
+    Ok(id)
+}
+
+/// Insert-if-missing, then return `symbol_id` for (provider_id, symbol_text).
+pub fn get_or_create_symbol_id(conn: &Connection, provider_id: i64, symbol_text: &str) -> anyhow::Result<i64> {
+    conn.execute(
+        "insert into symbols(provider_id, symbol_text) values (?, ?)
+         on conflict(provider_id, symbol_text) do nothing",
+        params![provider_id, symbol_text],
+    )?;
+    let id: i64 = conn.query_row(
+        "select symbol_id from symbols where provider_id = ? and symbol_text = ?",
+        params![provider_id, symbol_text],
+        |r| r.get(0),
+    )?;
+    Ok(id)
+}
+
+/// Insert-if-missing, then return `dataset_id` for (provider_id, symbol_id, kind, resolution).
+pub fn get_or_create_dataset_id(
+    conn: &Connection,
+    provider_id: i64,
+    symbol_id: i64,
+    kind: DataKind,
+    res: Option<Resolution>,
+) -> anyhow::Result<i64> {
+    let kind_s = format!("{kind:?}");
+    let res_s  = resolution_key(res);
+    conn.execute(
+        "insert into datasets(provider_id, symbol_id, kind, resolution)
+         values (?, ?, ?, ?)
+         on conflict(provider_id, symbol_id, kind, coalesce(resolution,'')) do nothing",
+        params![provider_id, symbol_id, kind_s, res_s],
+    )?;
+    let id: i64 = conn.query_row(
+        "select dataset_id from datasets
+          where provider_id = ? and symbol_id = ? and kind = ? and coalesce(resolution,'') = coalesce(?, '')",
+        params![provider_id, symbol_id, kind_s, res_s],
+        |r| r.get(0),
+    )?;
+    Ok(id)
+}
+
+// ---------- public entrypoints ----------
+
+pub fn ensure_dataset(
+    conn: &Connection,
+    provider: &str,
+    symbol: &str,
+    kind: DataKind,
+    resolution: Option<Resolution>,
+) -> anyhow::Result<i64> {
+    let provider_id = ensure_provider_id(conn, provider)?;
+    let symbol_id   = ensure_symbol_id(conn, provider_id, symbol)?;
+    ensure_dataset_row(conn, provider_id, symbol_id, kind, resolution)
+}
+
+// ---------- internal pieces ----------
+
+fn ensure_provider_id(conn: &Connection, provider: &str) -> anyhow::Result<i64> {
+    conn.execute(
+        "INSERT INTO providers(provider_code) VALUES (?) ON CONFLICT(provider_code) DO NOTHING",
+        params![provider],
+    )?;
+
+    conn.query_row(
+        "SELECT provider_id FROM providers WHERE provider_code = ?",
+        params![provider],
+        |r| r.get::<_, i64>(0),
+    ).map_err(|e| anyhow!("ensure_provider_id: {}", e))
+}
+
+fn ensure_symbol_id(conn: &Connection, provider_id: i64, symbol: &str) -> anyhow::Result<i64> {
+    conn.execute(
+        "INSERT INTO symbols(provider_id, symbol_text) VALUES (?, ?)
+         ON CONFLICT(provider_id, symbol_text) DO NOTHING",
+        params![provider_id, symbol],
+    )?;
+
+    conn.query_row(
+        "SELECT symbol_id FROM symbols WHERE provider_id = ? AND symbol_text = ?",
+        params![provider_id, symbol],
+        |r| r.get::<_, i64>(0),
+    ).map_err(|e| anyhow!("ensure_symbol_id: {}", e))
+}
+
+fn ensure_dataset_row(
+    conn: &Connection,
+    provider_id: i64,
+    symbol_id: i64,
+    kind: DataKind,
+    resolution: Option<Resolution>,
+) -> anyhow::Result<i64> {
+    let kind_key = kind_key(kind);
+    let res_key  = resolution_key(resolution);
+
+    conn.execute(
+        "INSERT INTO datasets(provider_id, symbol_id, kind, resolution)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(provider_id, symbol_id, kind, coalesce(resolution, '')) DO NOTHING",
+        params![provider_id, symbol_id, kind_key, res_key],
+    )?;
+
+    conn.query_row(
+        "SELECT dataset_id FROM datasets
+          WHERE provider_id=? AND symbol_id=? AND kind = ? AND coalesce(resolution,'') = coalesce(?, '')",
+        params![provider_id, symbol_id, kind_key, res_key],
+        |r| r.get::<_, i64>(0),
+    ).map_err(|e| anyhow!("ensure_dataset_row: {}", e))
+}
+
+// ---------- encoding helpers (must match what resolve_dataset_id expects) ----------
+
+fn kind_key(k: DataKind) -> String {
+    // Keep in sync with anything else that reads/writes `datasets.kind`
+    // e.g. "tick" | "bbo" | "candle" | "book"
+    match k {
+        DataKind::Tick   => "tick",
+        DataKind::Bbo    => "bbo",
+        DataKind::Candle => "candle",
+        DataKind::Book   => "book",
+    }.to_string()
+}
+
+fn ns_to_dt(ns: i64) -> chrono::DateTime<chrono::Utc> {
+    let secs = ns.div_euclid(1_000_000_000);
+    let nanos = ns.rem_euclid(1_000_000_000) as u32;
+    chrono::DateTime::from_timestamp(secs, nanos).expect("valid ns")
 }
