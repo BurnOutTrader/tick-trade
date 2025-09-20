@@ -1,9 +1,5 @@
-// crates/database/src/merge.rs
-
 use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
-
-// Pull your market data types from wherever they live.
 use standard_lib::market_data::base_data::{Bbo, Candle, OrderBook, Tick};
 
 /// Iterator wrapper around `KMerge` so you can hand it to for-loops easily.
