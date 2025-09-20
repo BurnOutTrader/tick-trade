@@ -1,0 +1,19 @@
+[package]
+name = "database"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+standard_lib = { path = "../standard_lib" }
+chrono-tz = { workspace = true }
+chrono = {workspace = true , features = ["serde"] }
+rust_decimal = { workspace = true , features = ["serde"] }
+serde = { workspace = true , features = ["derive"] }
+strum = { workspace = true }
+strum_macros = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v4", "serde"] }
+parquet = { version = "56.1.0", default-features = false, features = ["zstd", "arrow"] } # max compression
+arrow = { version = "56.1.0", features = ["ipc", "prettyprint"] }
+duckdb = { version = "1.4.0"} # duckdb-rs
+walkdir = { version = "2.5.0" }

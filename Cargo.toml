@@ -2,7 +2,8 @@
 members = [ 
     "crates/apis/rithmic",
     "crates/app", 
-    "crates/standard_lib"
+    "crates/standard_lib",
+    "crates/database"
 ]
 
 resolver = "3"
@@ -16,12 +17,13 @@ chrono-tz = "0.10.4"
 dashmap = "7.0.0-rc2"
 dotenvy = "0.15.7"
 futures-util = "0.3.31"
+strum = "0.27.2"
+strum_macros = "0.27.2"
 lazy_static = "1.5.0"
 prost = "0.14.1"
 rust_decimal = "1.37.2"
 rust_decimal_macros = "1.38.0"
 serde = { version = "1.0.219", features = ["derive"] }
-strum_macros = "0.27.2"
 thiserror = "2.0.16"
 tokio = { version = "1.47.1", features = ["rt", "rt-multi-thread", "macros", "sync", "time", "fs"]}
 tokio-tungstenite = { version = "0.27.0", features = ["stream", "native-tls"] }
