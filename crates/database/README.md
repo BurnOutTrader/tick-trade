@@ -5,7 +5,7 @@ It supports **DuckDB + Parquet** for efficient historical storage, compression, 
 
 ---
 
-## 3) Storage Model
+## 1) Storage Model
 
 We use a hybrid model combining **Parquet** and **DuckDB**:
 
@@ -25,7 +25,7 @@ This ensures both **fast queries** and **minimal duplication**.
 
 ---
 
-## 4) Catalog and Metadata
+## 2) Catalog and Metadata
 
 DuckDB maintains partition metadata:
 
@@ -40,3 +40,28 @@ SELECT MIN(min_ts) FROM partitions WHERE dataset_id = ?;
 
 -- Latest available data for symbol
 SELECT MAX(max_ts) FROM partitions WHERE dataset_id = ?;
+```
+
+---
+
+## 3) Using the API
+
+Other parts of the application can serialize or access data using the provided Rust functions. These functions leverage DuckDB SQL queries over Parquet files and return strongly-typed domain models such as `Tick` and `Candle`.
+
+Examples:
+
+```rust
+// Retrieve ticks in a given time range
+let ticks: Vec<Tick> = get_ticks_in_range("AAPL", start_timestamp, end_timestamp)?;
+```
+
+```rust
+// Retrieve candles (bars) in a given time range
+let candles: Vec<Candle> = get_candles_in_range("AAPL", start_timestamp, end_timestamp)?;
+```
+
+```rust
+// Query earliest and latest available data timestamps for a symbol
+let earliest: Option<DateTime<Utc>> = earliest_available("AAPL")?;
+let latest: Option<DateTime<Utc>> = latest_available("AAPL")?;
+```
