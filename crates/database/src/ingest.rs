@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::NaiveDate;
 use duckdb::Connection;
 use std::path::Path;
@@ -28,43 +28,6 @@ pub fn append_day(
     new_batch_parquet: &Path,
 ) -> Result<()> {
     let target = layout.file_for(provider, symbol, data_kind, resolution, day, Partitioning::Daily);
-    super::paths::Layout::ensure_parent_dirs(&target)?;
-    append_merge_parquet(conn, &target, new_batch_parquet, key_cols, order_by)
-}
-
-/// Same idea for yearly partitions (e.g., daily bars).
-pub fn append_year(
-    conn: &Connection,
-    layout: &Layout,
-    provider: &str,
-    symbol: &str,
-    data_kind: &str,
-    resolution: &str,
-    year: i32,
-    key_cols: &[&str],
-    order_by: &[&str],
-    new_batch_parquet: &Path,
-) -> Result<()> {
-    let day = NaiveDate::from_ymd_opt(year, 1, 1).context("bad year")?;
-    let target = layout.file_for(provider, symbol, data_kind, resolution, day, Partitioning::Yearly);
-    super::paths::Layout::ensure_parent_dirs(&target)?;
-    append_merge_parquet(conn, &target, new_batch_parquet, key_cols, order_by)
-}
-
-/// And for single-file datasets (e.g., weekly bars).
-pub fn append_single(
-    conn: &Connection,
-    layout: &Layout,
-    provider: &str,
-    symbol: &str,
-    data_kind: &str,
-    resolution: &str,
-    key_cols: &[&str],
-    order_by: &[&str],
-    new_batch_parquet: &Path,
-) -> Result<()> {
-    let day = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
-    let target = layout.file_for(provider, symbol, data_kind, resolution, day, Partitioning::Single);
     super::paths::Layout::ensure_parent_dirs(&target)?;
     append_merge_parquet(conn, &target, new_batch_parquet, key_cols, order_by)
 }

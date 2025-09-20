@@ -25,3 +25,4 @@ nanoid = "0.4.0"
 arrayvec = "0.7.6"
 tokio = "1.47.1"
 async-trait = {workspace = true}
+arrow-array = "56.1.0"

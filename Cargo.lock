@@ -619,6 +619,7 @@ dependencies = [
  "anyhow",
  "arrayvec",
  "arrow",
+ "arrow-array",
  "async-trait",
  "chrono",
  "chrono-tz",

@@ -46,3 +46,4 @@ create table if not exists partitions (
 create index if not exists idx_partitions_dataset_time on partitions(dataset_id, min_ts, max_ts);
 create index if not exists idx_symbols_provider_symbol on symbols(provider_id, symbol_text);
 create index if not exists idx_datasets_key on datasets(provider_id, symbol_id, kind, coalesce(resolution,''));
+create index if not exists idx_partitions_dataset_day on partitions(dataset_id, day_key);

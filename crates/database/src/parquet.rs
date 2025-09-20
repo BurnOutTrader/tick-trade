@@ -112,33 +112,51 @@ fn to_batch_ticks(rows: &[TickRow]) -> Result<RecordBatch, ParquetError> {
 }
 
 fn to_batch_candles(rows: &[CandleRow]) -> Result<RecordBatch, ParquetError> {
-    let schema = candle_schema();
-    let mut provider = StringBuilder::new();
-    let mut symbol_id = StringBuilder::new();
-    let mut exchange = StringBuilder::new();
-    let mut res = StringBuilder::new();
-    let mut ts0 = Int64Builder::new();
-    let mut ts1 = Int64Builder::new();
-    let (mut o, mut h, mut l,
-        mut c) = (Float64Builder::new(), Float64Builder::new(), Float64Builder::new(), Float64Builder::new());
-    let (mut v, mut av, mut bv)
-        = (Float64Builder::new(), Float64Builder::new(), Float64Builder::new());
+    let schema = candle_schema(); // must declare time_start/time_end as Timestamp(Microsecond, "UTC")
+
+    let mut provider   = StringBuilder::new();
+    let mut symbol_id  = StringBuilder::new();
+    let mut exchange   = StringBuilder::new();
+    let mut res        = StringBuilder::new();
+    // Use timestamp builders, not Int64:
+    let mut ts_start = TimestampMicrosecondBuilder::new();
+    let mut ts_end   = TimestampMicrosecondBuilder::new();
+
+    let (mut o, mut h, mut l, mut c) =
+        (Float64Builder::new(), Float64Builder::new(), Float64Builder::new(), Float64Builder::new());
+    let (mut v, mut av, mut bv) =
+        (Float64Builder::new(), Float64Builder::new(), Float64Builder::new());
     let mut n = UInt64Builder::new();
+
     for r in rows {
-        provider.append_value(&r.provider); symbol_id.append_value(&r.symbol_id);
-        exchange.append_value(&r.exchange); res.append_value(&r.res);
-        ts0.append_value(r.time_start_us); ts1.append_value(r.time_end_us);
+        provider.append_value(&r.provider);
+        symbol_id.append_value(&r.symbol_id);
+        exchange.append_value(&r.exchange);
+        res.append_value(&r.res);
+
+        // r.time_start_us / r.time_end_us are i64 microseconds since epoch (UTC)
+        ts_start.append_value(r.time_start_us);
+        ts_end.append_value(r.time_end_us);
+
         o.append_value(r.open); h.append_value(r.high); l.append_value(r.low); c.append_value(r.close);
         v.append_value(r.volume); av.append_value(r.ask_volume); bv.append_value(r.bid_volume);
         n.append_value(r.num_trades);
     }
-    Ok(RecordBatch::try_new(schema, vec![
-        Arc::new(provider.finish()), Arc::new(symbol_id.finish()), Arc::new(exchange.finish()),
-        Arc::new(res.finish()), Arc::new(ts0.finish()), Arc::new(ts1.finish()),
-        Arc::new(o.finish()), Arc::new(h.finish()), Arc::new(l.finish()), Arc::new(c.finish()),
-        Arc::new(v.finish()), Arc::new(av.finish()), Arc::new(bv.finish()),
-        Arc::new(n.finish()),
-    ])?)
+
+    Ok(RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(provider.finish()),
+            Arc::new(symbol_id.finish()),
+            Arc::new(exchange.finish()),
+            Arc::new(res.finish()),
+            Arc::new(ts_start.finish()),              // time_start (Timestamp us, UTC)
+            Arc::new(ts_end.finish()),                // time_end   (Timestamp us, UTC)
+            Arc::new(o.finish()), Arc::new(h.finish()), Arc::new(l.finish()), Arc::new(c.finish()),
+            Arc::new(v.finish()), Arc::new(av.finish()), Arc::new(bv.finish()),
+            Arc::new(n.finish()),
+        ],
+    )?)
 }
 
 fn to_batch_bbo(rows: &[BboRow]) -> Result<RecordBatch, ParquetError> {
