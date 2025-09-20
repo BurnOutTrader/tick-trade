@@ -109,105 +109,171 @@ println!("{} {} {} bids:{} asks:{}",
 - **Precision:** We keep `time` as ns internally (DuckDB stores TIMESTAMP_NS), and we serialize decimals as strings inside JSON (no float round-off).
 
 
+## Replay (Backtest)
 
-## Replay
+## 1. Loading data for the sim
 ```rust
 use chrono::{Utc, TimeZone};
-use database::queries::{
-    get_ticks_in_range, get_candles_in_range, get_books_in_range, /* etc */
-};
-use replay::historical_feed::{HistoricalFeed, HistoricalReceivers};
-
-struct MySinks;
-impl HistoricalReceivers for MySinks {
-    fn on_ticks(&mut self, ts: chrono::DateTime<Utc>, batch: &[Tick]) {
-        // fan-out to your tick receivers
-        // e.g., event_hub.publish_ticks(ts, batch)
-    }
-    fn on_candles(&mut self, ts: chrono::DateTime<Utc>, batch: &[Candle]) {
-        // fan-out to bar receivers
-    }
-    fn on_bbo(&mut self, ts: chrono::DateTime<Utc>, batch: &[Bbo]) {
-        // ...
-    }
-    fn on_books(&mut self, ts: chrono::DateTime<Utc>, batch: &[OrderBook]) {
-        // ...
-    }
-}
-
-fn run_replay(conn: &duckdb::Connection) -> anyhow::Result<()> {
-    let provider = "databento";
-    let symbol   = "MNQ";
-    let res      = standard_lib::market_data::base_data::Resolution::Seconds(1);
-
-    let start = Utc.with_ymd_and_hms(2024, 9, 12, 13, 30, 0).unwrap();
-    let end   = Utc.with_ymd_and_hms(2024, 9, 12, 20, 0, 0).unwrap();
-
-    // Pull historical data (already time-sorted by our queries).
-    let ticks   = get_ticks_in_range(conn, provider, symbol, start, end)?;
-    let candles = get_candles_in_range(conn, provider, symbol, res, start, end)?;
-    let books   = get_books_in_range(conn, provider, symbol, start, end, Some(10))?;
-    let bbo     = Vec::new(); // if you fetch BBO, plug it in
-
-    // Build the stepper (skip sorting because queries already ORDER BY time).
-    let mut feed = HistoricalFeed::new(ticks, candles, bbo, books, /*ensure_sort=*/ false);
-
-    let mut sinks = MySinks;
-    while feed.step(&mut sinks) {
-        // do pacing here if you want (e.g., sleep for realtime replay speed)
-    }
-    Ok(())
-}
-```
-
-
-
-## Replay (Backtest)
-How you use it
-- You do not “install a DB server”. DuckDB/Parquet are file-backed; your read fns already operate with a duckdb::Connection.
-- For each (provider, symbol, kind) you want to replay, prefetch with your query helpers, build a SymbolKindReplayer, register with the ReplayCoordinator, and run. The coordinator guarantees global time order and same-timestamp coalescing across all sources.
-
-Example wiring (in your historical engine):
-```rust
-use chrono::{Utc, TimeZone, DateTime};
-use std::time::Duration;
 use duckdb::Connection;
+use database::queries::{
+    get_ticks_in_range, get_candles_in_range, get_books_in_range,
+};
+use standard_lib::market_data::base_data::{Resolution};
 
-pub async fn run_historical_example(conn: &Connection, hub: EventHub) -> anyhow::Result<()> {
-    let provider = "Rithmic";
-    let symbol   = "MNQ";
-    let exch     = Exchange::CME;
+let conn = Connection::open("catalog.duckdb")?;
+let provider = "Rithmic";
+let symbol   = "MNQ";
+let start    = Utc.with_ymd_and_hms(2024, 10, 23, 13, 30, 0).unwrap();
+let end      = Utc.with_ymd_and_hms(2024, 10, 23, 20, 0, 0).unwrap();
 
-    let start: DateTime<Utc> = Utc.with_ymd_and_hms(2024, 12, 2, 0, 0, 0).unwrap();
-    let end:   DateTime<Utc> = Utc.with_ymd_and_hms(2024, 12, 2, 23, 59, 59).unwrap();
+// load only what you need
+let ticks   = get_ticks_in_range(&conn, provider, symbol, start, end)?;
+let candles = get_candles_in_range(&conn, provider, symbol, Resolution::Seconds(1), start, end)?;
+let books   = get_books_in_range(&conn, provider, symbol, start, end, Some(10))?; // depth=10
+```
 
-    // Prefetch your datasets (these preserve ns and are time-sorted in the replayer)
-    let ticks   = crate::queries::get_ticks_in_range(conn, provider, symbol, start, end)?;
-    let candles = crate::queries::get_candles_in_range(conn, provider, symbol, Resolution::Seconds(1), start, end)?;
-    let books   = crate::queries::get_books_in_range(conn, provider, symbol, start, end, Some(10))?;
+## 2. Build replayers and the coordinator
+```rust
+use database::replay::{ReplayCoordinator, SymbolKindReplayer};
+use std::time::Duration;
 
-    // Build sources
-    let tick_src   = SymbolKindReplayer::new_ticks(format!("{provider} {symbol} Ticks"), ticks);
-    let cndl_src   = SymbolKindReplayer::new_candles(format!("{provider} {symbol} Candles(1s)"), candles);
-    let book_src   = SymbolKindReplayer::new_books(format!("{provider} {symbol} Books"), books);
+// Create one replayer per (symbol, kind)
+let r_ticks   = SymbolKindReplayer::new_ticks(format!("{provider} {symbol} Ticks"),   ticks);
+let r_candles = SymbolKindReplayer::new_candles(format!("{provider} {symbol} 1s"),   candles);
+let r_books   = SymbolKindReplayer::new_books(format!("{provider} {symbol} Books"),  books);
 
-    // Coordinate and run (optional pacing to avoid firehose; omit for max speed)
-    let mut coord = ReplayCoordinator::new();
-    coord.add_source(tick_src);
-    coord.add_source(cndl_src);
-    coord.add_source(book_src);
+// Build the coordinator
+let mut coord = ReplayCoordinator::new();
+coord.add_source(r_ticks);
+coord.add_source(r_candles);
+coord.add_source(r_books);
 
-    coord.run(hub.clone(), Some(Duration::from_millis(0))).await?;
-    Ok(())
+// You’ll also need your EventHub:
+let hub = EventHub::new();
+```
+
+## 3. Pacing modes
+
+### Fixed Rate Pacing 
+```rust
+// 10ms per replay step (all items at the same timestamp are batched per step)
+let pace = Some(Duration::from_millis(10));
+tokio::spawn(async move {
+    let _ = coord.run(hub.clone(), pace).await;
+});
+```
+
+### Real time pacing
+```rust
+use chrono::{DateTime, Utc};
+use std::time::Duration;
+use tokio::time::sleep;
+use database::replay::{ReplayCoordinator, ReplayControl};
+
+let hub = hub.clone();
+let (mut runner, handle) = ReplayCoordinator::with_control(coord); // gives you a control handle
+
+let speed = 4.0; // 4x realtime
+tokio::spawn(async move {
+    let mut last_ts: Option<DateTime<Utc>> = None;
+    loop {
+        // Ask the runner to step once (returns the timestamp it just emitted, if any)
+        match runner.step_once(&hub).await {
+            Some(ts) => {
+                if let Some(prev) = last_ts {
+                    let nanos = (ts - prev).num_nanoseconds().unwrap_or(0);
+                    if nanos > 0 {
+                        // Scale the gap by 1/speed (min clamp avoids zero-sleep busy loops)
+                        let scaled = (nanos as f64 / speed).max(0.0);
+                        let dur = Duration::from_nanos(scaled as u64);
+                        sleep(dur).await;
+                    }
+                }
+                last_ts = Some(ts);
+            }
+            None => break, // done
+        }
+
+        // Optional: poll control channel to pause/resume/change speed (see §4)
+        if handle.is_paused() { handle.wait_until_resumed().await; }
+    }
+});
+```
+
+### Manual Steping
+```rust
+let (mut runner, handle) = ReplayCoordinator::with_control(coord);
+
+// step on demand
+while runner.step_once(&hub).await.is_some() {
+    // …do other work, inspect hub snapshots, etc…
+    // call again when you’re ready
 }
 ```
 
-Why this solves your concerns
-- Different channels per provider/symbol/type: each SymbolKindReplayer is exactly one such channel. You can add as many as you want.
-- Synchronize historical: the ReplayCoordinator uses a global min-heap on peek_ts() to emit all sources that have the next timestamp, together, every step.
-- Same-timestamp fan-out: inside each replayer we drain “all rows with the same ts” into a batch and publish once, so consolidators/broadcasters see a coherent snapshot for that instant.
-- Candles keyed on time_end: implemented in peek_ts() and the drain for candles.
-- No clones in hot path: we operate on VecDeque and move items out.
-- Works for live mode too: the same pattern applies; swap “prefetch” with streaming inputs that append to the deques.
+Tips & gotchas
+- Candles: keyed by time_end. If you previously treated them by time_start, fix usages (we already did in queries + replayer).
+- Backpressure: broadcast channels are lossy under lag. For historical sims at high speed, bump topic buffer sizes (Topic::new(cap)), or slow the pace.
+- Memory: If rows are huge, consider streaming in file chunks (e.g., per day) and rotate replayers as you progress. The coordinator design stays the same; sources can be short-lived.
+- Determinism: Within a single timestamp, order is “source order”. If you need a strict rule (e.g., book before bbo, bbo before tick), do it in the receivers or split steps per kind.
 
+#### Minimal End to End Example
+```rust
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // 1) Hub
+    let hub = EventHub::new();
 
+    // 2) Load data & build coordinator (see §1–2)
+    let conn = duckdb::Connection::open("catalog.duckdb")?;
+    let (start, end) = ( /* … */ );
+    let ticks   = get_ticks_in_range(&conn, "Rithmic", "MNQ", start, end)?;
+    let candles = get_candles_in_range(&conn, "Rithmic", "MNQ", Resolution::Seconds(1), start, end)?;
+    let books   = get_books_in_range(&conn, "Rithmic", "MNQ", start, end, Some(10))?;
+
+    let mut coord = ReplayCoordinator::new();
+    coord.add_source(SymbolKindReplayer::new_ticks("MNQ ticks".into(), ticks));
+    coord.add_source(SymbolKindReplayer::new_candles("MNQ 1s".into(), candles));
+    coord.add_source(SymbolKindReplayer::new_books("MNQ books".into(), books));
+
+    // 3) Control
+    let (mut runner, ctl) = ReplayCoordinator::with_control(coord);
+    ctl.set_speed(8.0);
+
+    // 4) Consumers
+    let mut rx = hub.subscribe_candle_symbol("MNQ");
+    tokio::spawn(async move {
+        while let Ok(c) = rx.recv().await {
+            println!("{} {}-{} C={}", c.symbol, c.time_start, c.time_end, c.close);
+        }
+    });
+
+    // 5) Run (timestamp-paced)
+    tokio::spawn({
+        let hub = hub.clone();
+        async move {
+            let mut last = None;
+            while let Some(ts) = runner.step_once(&hub).await {
+                if ctl.is_paused() { ctl.wait_until_resumed().await; }
+                if let Some(prev) = last {
+                    let nanos = (ts - prev).num_nanoseconds().unwrap_or(0);
+                    let scaled = (nanos as f64 / ctl.speed()).max(0.0);
+                    tokio::time::sleep(std::time::Duration::from_nanos(scaled as u64)).await;
+                }
+                last = Some(ts);
+            }
+        }
+    });
+
+    // (Optional) UI: pause after 3 seconds, resume after 2, change speed
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    ctl.pause();
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    ctl.set_speed(20.0);
+    ctl.resume();
+
+    // keep alive for demo
+    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+    Ok(())
+}
+```
