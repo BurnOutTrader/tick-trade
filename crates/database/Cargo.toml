@@ -17,3 +17,6 @@ parquet = { version = "56.1.0", default-features = false, features = ["zstd", "a
 arrow = { version = "56.1.0", features = ["ipc", "prettyprint"] }
 duckdb = { version = "1.4.0"} # duckdb-rs
 walkdir = { version = "2.5.0" }
+anyhow = { workspace = true }
+ahash = {workspace = true}
+tempfile = "3.22.0"

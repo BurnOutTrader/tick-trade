@@ -1,5 +1,7 @@
+use std::path::{Path, PathBuf};
 use chrono::{DateTime, Datelike, Utc};
 use standard_lib::market_data::base_data::Resolution;
+use crate::models::DataKind;
 
 /// Filesystem layout with resolution-aware partitioning.
 /// Examples:
@@ -60,5 +62,80 @@ impl LakeLayout {
             Resolution::Ticks      => "TICK".into(),
             Resolution::Quote      => "QUOTE".into(),
         }
+    }
+}
+
+
+/// We use Hive-style partitions so DuckDB can “discover” partition columns:
+/// provider=..., kind=..., symbol=..., res=..., year=..., date=YYYY-MM-DD
+///
+/// Layout (examples):
+/// ticks:   root/provider=Rithmic/kind=Tick/symbol=MNQ/exchange=CME/res=Ticks/date=2025-03-14/*.parquet
+/// bbo:     root/provider=DB/kind=Bbo/symbol=MNQ/exchange=CME/res=Quote/date=2025-03-14/*.parquet
+/// candles:
+///   - Seconds/Minutes/Hours/TickBars: .../date=YYYY-MM-DD/*.parquet   (intraday = per-day files)
+///   - Daily:                         .../year=2025/*.parquet          (per-year files)
+///   - Weekly:                        .../*.parquet                    (single file total)
+///
+/// Notes:
+/// - Keeping `exchange` and `res` as partitions helps pruning a lot.
+/// - `symbol` here is *instrument key* (“MNQZ25” or continuous “MNQ”), your call.
+
+fn res_str(res: &Resolution) -> String {
+    use Resolution::*;
+    match *res {
+        Ticks => "Ticks".into(),
+        Quote => "Quote".into(),
+        Seconds(n) => format!("Seconds{n}"),
+        Minutes(n) => format!("Minutes{n}"),
+        Hours(n)   => format!("Hours{n}"),
+        TickBars(n)=> format!("TickBars{n}"),
+        Daily      => "Daily".into(),
+        Weekly     => "Weekly".into(),
+    }
+}
+
+pub struct Layout<'a> {
+    pub root: &'a Path,
+}
+
+impl<'a> Layout<'a> {
+    pub fn new(root: &'a Path) -> Self { Self { root } }
+
+    /// Glob covering *all* files for a given (provider, kind, symbol, exchange, resolution).
+    /// We don’t bake dates in; DuckDB will prune via partition filters.
+    pub fn glob_for(
+        &self,
+        provider: &str,
+        kind: DataKind,
+        symbol: &str,
+        exchange: &str,
+        res: Resolution,
+    ) -> String {
+        use DataKind::*;
+        let mut p = PathBuf::from(self.root);
+        p.push(format!("provider={provider}"));
+        p.push(format!("kind={kind}"));
+        p.push(format!("symbol={symbol}"));
+        p.push(format!("exchange={exchange}"));
+        p.push(format!("res={}", res_str(&res)));
+
+        match (kind, res) {
+            (Candle, Resolution::Daily) => {
+                // per-year
+                p.push("year=*");
+                p.push("*.parquet");
+            }
+            (Candle, Resolution::Weekly) => {
+                // single file (keep it flexible with a glob)
+                p.push("*.parquet");
+            }
+            _ => {
+                // per-day files (ticks, bbo, and intraday candles)
+                p.push("date=*");
+                p.push("*.parquet");
+            }
+        }
+        p.to_string_lossy().into_owned()
     }
 }

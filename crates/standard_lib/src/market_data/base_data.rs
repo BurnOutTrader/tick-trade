@@ -26,6 +26,21 @@ pub enum Resolution {
     Weekly,
 }
 
+impl Resolution {
+    pub fn as_key(&self) -> Option<&'static str> {
+        match self {
+            Resolution::Ticks => Some("ticks"),
+            Resolution::Quote => Some("quote"),
+            Resolution::Seconds(n) => Some(Box::leak(format!("sec{}", n).into_boxed_str())),
+            Resolution::Minutes(n) => Some(Box::leak(format!("min{}", n).into_boxed_str())),
+            Resolution::Hours(n) => Some(Box::leak(format!("hr{}", n).into_boxed_str())),
+            Resolution::TickBars(n) => Some(Box::leak(format!("tickbars{}", n).into_boxed_str())),
+            Resolution::Daily => Some("daily"),
+            Resolution::Weekly => Some("weekly"),
+        }
+    }
+}
+
 /// Trade direction.
 ///
 /// Indicates whether a trade or order was executed on the buy or sell side.

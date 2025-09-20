@@ -615,6 +615,8 @@ checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
 name = "database"
 version = "0.1.0"
 dependencies = [
+ "ahash 0.8.12",
+ "anyhow",
  "arrow",
  "chrono",
  "chrono-tz",
@@ -625,6 +627,7 @@ dependencies = [
  "standard_lib",
  "strum",
  "strum_macros",
+ "tempfile",
  "thiserror",
  "uuid",
  "walkdir",

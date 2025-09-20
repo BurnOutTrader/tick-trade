@@ -1,8 +1,18 @@
-use chrono::{NaiveDate, DateTime, Utc};
 use serde::{Serialize, Deserialize};
-use std::str::FromStr;
 use strum_macros::Display;
-use rust_decimal::Decimal;
+
+/// What’s stored (determines folder layout + schema columns)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]
+pub enum DataKind {
+    /// Executed trades (ticks). One file per **day**.
+    Tick,
+    /// Best bid/offer (BBO quotes). One file per **day**.
+    Bbo,
+    /// Aggregated bars/candles. Daily=per year, Weekly=one file, intraday=per day.
+    Candle,
+
+    BookL2
+}
 
 // ---------- Disambiguation key for same-timestamp events ----------
 // Store time in microseconds to align with Parquet/Arrow, plus a tie-breaker.
@@ -79,4 +89,10 @@ pub struct UniverseMember {
     pub universe: String,      // e.g. "CME_MICROS"
     pub symbol_id: String,
     pub provider: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SeqBound {
+    pub ts: chrono::DateTime<chrono::Utc>,
+    pub seq: Option<i64>,
 }
